@@ -282,7 +282,7 @@ def webhook():
                     # storage filename
                     # ---------------------------------------------
                     filename = (
-                        f"line_images/"
+                        f"image_rw_sys1/"
                         f"{user_id}/"
                         f"{image_id}.jpg"
                     )
