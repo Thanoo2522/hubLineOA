@@ -82,7 +82,7 @@ rtdb_ref = rtdb.reference("/")
 bucket = storage.bucket()
 
 # =========================================================
-# LINE REPLY
+# REPLY MESSAGE
 # =========================================================
 def reply_message(reply_token, text):
 
@@ -103,11 +103,13 @@ def reply_message(reply_token, text):
         ]
     }
 
-    requests.post(
+    response = requests.post(
         url,
         headers=headers,
         json=payload
     )
+
+    print("REPLY STATUS:", response.status_code)
 
 # =========================================================
 # WEBHOOK
@@ -146,23 +148,24 @@ def webhook():
 
                 message = event["message"]
 
-                # =============================================
-                # TEXT
-                # =============================================
+                # =================================================
+                # TEXT MESSAGE
+                # รูปแบบ:
+                # ชื่อภาพ|คำอธิบาย
+                # =================================================
                 if message["type"] == "text":
 
                     text = message["text"]
 
                     print("TEXT:", text)
 
-                    # -----------------------------------------
-                    # รูปแบบ:
-                    # ชื่อภาพ|คำอธิบาย
-                    # -----------------------------------------
-
                     image_name = ""
+
                     description = text
 
+                    # ---------------------------------------------
+                    # split text
+                    # ---------------------------------------------
                     if "|" in text:
 
                         parts = text.split("|", 1)
@@ -171,10 +174,11 @@ def webhook():
 
                         description = parts[1].strip()
 
-                    # -----------------------------------------
-                    # SAVE TEMP USER DATA
-                    # -----------------------------------------
-                    db.collection("line_users") \
+                    # ---------------------------------------------
+                    # save temp user data
+                    # image_rw_sys1/USER_ID
+                    # ---------------------------------------------
+                    db.collection("image_rw_sys1") \
                         .document(user_id) \
                         .set({
 
@@ -184,29 +188,29 @@ def webhook():
 
                         }, merge=True)
 
-                    # -----------------------------------------
-                    # REPLY
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # reply
+                    # ---------------------------------------------
                     reply_message(
                         reply_token,
                         "บันทึกชื่อภาพและคำอธิบายแล้ว\nส่งรูปภาพได้เลย"
                     )
 
-                # =============================================
-                # IMAGE
-                # =============================================
+                # =================================================
+                # IMAGE MESSAGE
+                # =================================================
                 elif message["type"] == "image":
 
                     message_id = message["id"]
 
                     print("IMAGE:", message_id)
 
-                    # -----------------------------------------
-                    # GET USER DATA
-                    # -----------------------------------------
-                    user_doc = db.collection("line_users") \
-                                .document(user_id) \
-                                .get()
+                    # ---------------------------------------------
+                    # get temp data
+                    # ---------------------------------------------
+                    user_doc = db.collection("image_rw_sys1") \
+                                 .document(user_id) \
+                                 .get()
 
                     image_name = ""
 
@@ -226,9 +230,9 @@ def webhook():
                             ""
                         )
 
-                    # -----------------------------------------
-                    # DOWNLOAD IMAGE FROM LINE
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # download image from LINE
+                    # ---------------------------------------------
                     headers = {
                         "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
                     }
@@ -243,42 +247,49 @@ def webhook():
                         headers=headers
                     )
 
+                    # ---------------------------------------------
+                    # error download
+                    # ---------------------------------------------
                     if response.status_code != 200:
 
                         print("DOWNLOAD ERROR")
 
                         reply_message(
                             reply_token,
-                            "ดาวน์โหลดรูปไม่สำเร็จ"
+                            "ดาวน์โหลดรูปภาพไม่สำเร็จ"
                         )
 
                         continue
 
+                    # ---------------------------------------------
+                    # image binary
+                    # ---------------------------------------------
                     image_data = response.content
 
-                    # -----------------------------------------
-                    # CREATE IMAGE ID
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # create image id
+                    # ---------------------------------------------
                     image_id = str(uuid.uuid4())
 
-                    # -----------------------------------------
-                    # DEFAULT IMAGE NAME
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # default image name
+                    # ---------------------------------------------
                     if image_name == "":
 
                         image_name = f"image_{image_id}"
 
-                    # -----------------------------------------
-                    # STORAGE PATH
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # storage filename
+                    # ---------------------------------------------
                     filename = (
                         f"line_images/"
+                        f"{user_id}/"
                         f"{image_id}.jpg"
                     )
 
-                    # -----------------------------------------
-                    # UPLOAD STORAGE
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # upload firebase storage
+                    # ---------------------------------------------
                     blob = bucket.blob(filename)
 
                     blob.upload_from_string(
@@ -286,17 +297,24 @@ def webhook():
                         content_type="image/jpeg"
                     )
 
-                    # -----------------------------------------
-                    # PUBLIC URL
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # public url
+                    # ---------------------------------------------
                     blob.make_public()
 
                     image_url = blob.public_url
 
-                    # -----------------------------------------
-                    # SAVE FIRESTORE
-                    # -----------------------------------------
-                    db.collection("line_images") \
+                    # ---------------------------------------------
+                    # firestore save
+                    #
+                    # image_rw_sys1
+                    #   └── USER_ID
+                    #         └── images
+                    #               └── IMAGE_ID
+                    # ---------------------------------------------
+                    db.collection("image_rw_sys1") \
+                        .document(user_id) \
+                        .collection("images") \
                         .document(image_id) \
                         .set({
 
@@ -312,9 +330,9 @@ def webhook():
 
                     print("UPLOAD SUCCESS")
 
-                    # -----------------------------------------
-                    # REPLY SUCCESS
-                    # -----------------------------------------
+                    # ---------------------------------------------
+                    # reply success
+                    # ---------------------------------------------
                     reply_message(
                         reply_token,
                         f"บันทึกรูปสำเร็จ\nชื่อภาพ: {image_name}"
@@ -329,7 +347,104 @@ def webhook():
         return "ERROR", 500
 
 # =========================================================
-# TEST
+# GET IMAGE LIST
+# =========================================================
+@app.route("/get_images/<user_id>", methods=["GET"])
+def get_images(user_id):
+
+    try:
+
+        docs = db.collection("image_rw_sys1") \
+                 .document(user_id) \
+                 .collection("images") \
+                 .order_by(
+                     "createdAt",
+                     direction=firestore.Query.DESCENDING
+                 ) \
+                 .stream()
+
+        results = []
+
+        for doc in docs:
+
+            data = doc.to_dict()
+
+            results.append(data)
+
+        return jsonify({
+            "status": "success",
+            "count": len(results),
+            "data": results
+        })
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+# =========================================================
+# DELETE IMAGE
+# =========================================================
+@app.route("/delete_image/<user_id>/<image_id>", methods=["DELETE"])
+def delete_image(user_id, image_id):
+
+    try:
+
+        # ---------------------------------------------
+        # get firestore document
+        # ---------------------------------------------
+        doc_ref = db.collection("image_rw_sys1") \
+                    .document(user_id) \
+                    .collection("images") \
+                    .document(image_id)
+
+        doc = doc_ref.get()
+
+        if not doc.exists:
+
+            return jsonify({
+                "status": "error",
+                "message": "Image not found"
+            }), 404
+
+        data = doc.to_dict()
+
+        filename = data.get("filename")
+
+        # ---------------------------------------------
+        # delete storage
+        # ---------------------------------------------
+        if filename:
+
+            blob = bucket.blob(filename)
+
+            blob.delete()
+
+        # ---------------------------------------------
+        # delete firestore
+        # ---------------------------------------------
+        doc_ref.delete()
+
+        return jsonify({
+            "status": "success",
+            "message": "Image deleted"
+        })
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+# =========================================================
+# HOME
 # =========================================================
 @app.route("/", methods=["GET"])
 def home():
@@ -338,7 +453,7 @@ def home():
 
 # =========================================================
 # MAIN
-# =========================================================
+# =======================================================
 if __name__ == "__main__":
 
     app.run(
