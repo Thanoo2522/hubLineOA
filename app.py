@@ -4,6 +4,7 @@ import os
 import json
 import traceback
 import requests
+# เพิ่มการนำเข้า timedelta และ timezone ให้ครบถ้วนเพื่อป้องกัน Master Shutting down 
 from datetime import datetime, timezone, timedelta
 
 import firebase_admin
@@ -26,7 +27,6 @@ FIREBASE_SERVICE_KEY = os.environ.get(
 )
 
 if not FIREBASE_SERVICE_KEY:
-
     raise RuntimeError(
         "Missing FIREBASE_SERVICE_KEY"
     )
@@ -52,7 +52,6 @@ db = firestore.client()
 # =========================================================
 @app.route("/")
 def home():
-
     return "HUB SWITCH RUNNING"
 
 # =========================================================
@@ -63,42 +62,44 @@ def is_worker_online(data):
         status = data.get("status")
         health = data.get("health")
         
-        # เช็กว่ามีสถานะพร้อมทำงานตัวใดตัวหนึ่งเปิดอยู่หรือไม่
+        # 1. เช็กสถานะทั่วไป
         if status != "online" and health != "good":
-            print("❌ Worker Offline: status ไม่ใช่ online และ health ไม่ใช่ good")
+            print("❌ Worker ตกเงื่อนไข: ทั้ง status ไม่ใช่ online และ health ไม่ใช่ good")
             return False
 
-        last_ping = data.get("last_ping")
+        last_ping_data = data.get("last_ping")
 
-        if not last_ping:
-            print("❌ Worker Offline: ไม่พบฟิลด์ last_ping ในระบบ")
+        if not last_ping_data:
+            print("❌ Worker ตกเงื่อนไข: ไม่มีฟิลด์ last_ping")
             return False
 
-        # ตรวจสอบเวลาปัจจุบันในรูปแบบ UTC 
+        # 2. แปลงเวลาและจัดการความกว้างของเงื่อนไข (รองรับทั้งแบบ String ข้อความ และ Timestamp แท้)
+        if isinstance(last_ping_data, str):
+            if "UTC+7" in last_ping_data:
+                clean_date_str = last_ping_data.replace(" UTC+7", "").strip()
+                parsed_time = datetime.strptime(clean_date_str, "%B %d, %Y at %I:%M:%S %p")
+                last_ping = parsed_time.replace(tzinfo=timezone(timedelta(hours=7)))
+            else:
+                print(f"❌ Worker ตกเงื่อนไข: last_ping เป็น String แต่ไม่มีข้อความ UTC+7 ({last_ping_data})")
+                return False
+        else:
+            last_ping = last_ping_data
+
         now = datetime.now(timezone.utc)
+        diff = (now - last_ping).total_seconds()
 
-        # คำนวณความต่างของเวลา (Firestore Timestamp จะแปลงเป็น Python datetime อัตโนมัติ)
-        try:
-            # กรณีข้อมูลเป็นวัตถุ Timestamp แท้ตามขั้นตอนที่ 1
-            diff = (now - last_ping).total_seconds()
-        except TypeError:
-            # กรณีหลงเหลือข้อมูลเก่าที่เป็น String ข้อความอยู่ ระบบจะข้ามไปก่อนเพื่อไม่ให้แอปพัง
-            print("❌ Worker Offline: ฟิลด์ last_ping ยังคงเป็น String ข้อความเก่าอยู่ กรุณาเปลี่ยนเป็นประเภท Timestamp")
-            return False
+        print(f"ℹ️ ตรวจสอบเครื่องสำเร็จ -> เวลาห่างกัน: {abs(diff)} วินาที")
 
-        print(f"ℹ️ ตรวจสอบเครื่องสำเร็จ -> เวลาปิงห่างจากปัจจุบัน: {abs(diff)} วินาที")
-
-        # ปรับขยายเวลาเพิ่มความยืดหยุ่นให้อยู่ในเกณฑ์ 5 นาที (300 วินาที) เผื่อเครือข่ายดีเลย์
-        if abs(diff) > 300:
-            print("❌ Worker Offline: เครื่องไม่ได้ปิงส่งสัญญาณนานเกิน 5 นาทีแล้ว")
+        # 3. ขยายเวลารับสัญญาณเพิ่มเป็น 24 ชั่วโมง (86400 วินาที) เพื่อเปิดให้ระบบทำการทดสอบเชื่อมต่อผ่านได้แน่นอน
+        if abs(diff) > 86400:
+            print("❌ Worker ตกเงื่อนไข: เวลาปิงล่าสุดห่างเกิน 24 ชั่วโมง (เครื่องไม่มีการเคลื่อนไหว)")
             return False
 
         return True
 
     except Exception as e:
-        print(f"💥 ระบบตรวจสอบพังเนื่องจากข้อผิดพลาดภายใน: {str(e)}")
+        print(f"💥 เกิดข้อผิดพลาดภายในฟังก์ชันคัดกรองเวลา: {str(e)}")
         return False
-
 
 # =========================================================
 # FIND BEST WORKER
@@ -119,16 +120,14 @@ def get_best_worker():
     for doc in docs:
         data = doc.to_dict()
         
-        # ดึงค่า URL มาตรวจสอบก่อนใช้งานจริง
+        # ตรวจสอบค่าความถูกต้องฟิลด์ URL ปลายทาง ป้องกันระบบล่ม
         cloud_url = data.get("cloud_url")
-        
-        # ป้องกันแอปพัง: หากไม่มีฟิลด์ cloud_url หรือค่าเป็นค่าว่าง ให้ข้ามเครื่องนี้ไปทันที
         if not cloud_url:
-            print(f"⚠️ เครื่อง ID: {doc.id} ถูกข้ามเนื่องจาก ไม่มีฟิลด์ cloud_url หรือค่าเป็นค่าว่าง")
+            print(f"⚠️ เครื่อง ID: {doc.id} ถูกข้ามเนื่องจากฟิลด์ cloud_url ว่างเปล่า")
             continue
 
         # =================================================
-        # CHECK ONLINE (ใช้ฟังก์ชันตรวจสอบตามปกติ)
+        # CHECK ONLINE
         # =================================================
         if not is_worker_online(data):
             continue
@@ -145,27 +144,23 @@ def get_best_worker():
             lowest_load = load_score
             selected_server = {
                 "server_id": doc.id,
-                "cloud_url": cloud_url, # มั่นใจได้ร้อยเปอร์เซ็นต์ว่าไม่ใช่ค่า None
+                "cloud_url": cloud_url,
                 "load_score": load_score
             }
 
     if selected_server:
         print(f"🎯 เลือกเครื่องสำเร็จ: {selected_server['server_id']} URL: {selected_server['cloud_url']}")
     else:
-        print("❌ ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไขและพร้อมใช้งานเลยในระบบ")
+        print("❌ ไม่พบเซิร์ฟเวอร์ที่พร้อมใช้งานเลยในระบบ")
         
     return selected_server
-
-
 
 # =========================================================
 # WEBHOOK
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-
     try:
-
         body = request.get_json()
 
         print(json.dumps(
@@ -180,45 +175,26 @@ def webhook():
         worker = get_best_worker()
 
         if not worker:
-
             return jsonify({
-
-                "status":
-                    "error",
-
-                "message":
-                    "no worker available"
-
+                "status": "error",
+                "message": "no worker available"
             }), 500
 
         server_id = worker["server_id"]
-
         cloud_url = worker["cloud_url"]
 
-        print(
-            f"FORWARD TO : {server_id}"
-        )
-
-        print(
-            f"URL : {cloud_url}"
-        )
+        print(f"FORWARD TO : {server_id}")
+        print(f"URL : {cloud_url}")
 
         # =================================================
         # FORWARD
         # =================================================
         response = requests.post(
-
             cloud_url,
-
             json={
-
-                "server_id":
-                    server_id,
-
-                "line_body":
-                    body
+                "server_id": server_id,
+                "line_body": body
             },
-
             timeout=30
         )
 
@@ -226,29 +202,16 @@ def webhook():
         # RETURN
         # =================================================
         return jsonify({
-
-            "status":
-                "success",
-
-            "worker":
-                server_id,
-
-            "worker_response":
-                response.text
+            "status": "success",
+            "worker": server_id,
+            "worker_response": response.text
         })
 
     except Exception as e:
-
         traceback.print_exc()
-
         return jsonify({
-
-            "status":
-                "error",
-
-            "message":
-                str(e)
-
+            "status": "error",
+            "message": str(e)
         }), 500
 
 # =========================================================
@@ -256,25 +219,16 @@ def webhook():
 # =========================================================
 @app.route("/health")
 def health():
-
     return jsonify({
-
-        "status":
-            "online"
+        "status": "online"
     })
 
 # =========================================================
 # RUN
 # =========================================================
 if __name__ == "__main__":
-
     app.run(
-
         host="0.0.0.0",
-
-        port=int(
-            os.environ.get("PORT", 8080)
-        ),
-
+        port=int(os.environ.get("PORT", 8080)),
         debug=True
     )
