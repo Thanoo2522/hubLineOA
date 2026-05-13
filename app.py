@@ -4,7 +4,7 @@ import os
 import json
 import traceback
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import firebase_admin
 
@@ -59,27 +59,50 @@ def home():
 # CHECK WORKER ONLINE
 # =========================================================
 def is_worker_online(data):
+    try:
+        # 1. ตรวจสอบสถานะจากฟิลด์ health (รองรับทั้งฟิลด์ status เผื่ออนาคตเปลี่ยน)
+        status = data.get("status")
+        health = data.get("health")
+        
+        if status != "online" and health != "good":
+            return False
 
-    status = data.get("status")
+        last_ping_data = data.get("last_ping")
 
-    if status != "online":
+        if not last_ping_data:
+            return False
+
+        # 2. ตรวจสอบประเภทข้อมูลของ last_ping (เผื่อเป็น String หรือ Native Firestore Timestamp)
+        if isinstance(last_ping_data, str):
+            # รองรับฟอร์แมต String: "May 13, 2026 at 11:04:50 AM UTC+7" ที่ปรากฏในฐานข้อมูลของคุณ
+            if "UTC+7" in last_ping_data:
+                clean_date_str = last_ping_data.replace(" UTC+7", "").strip()
+                # แปลงข้อความให้กลายเป็น datetime object (เวลาไทยภูมิภาค GMT+7)
+                parsed_time = datetime.strptime(clean_date_str, "%B %d, %Y at %I:%M:%S %p")
+                # ระบุ timezone ให้ถูกต้องตามฐานข้อมูลของคุณ (+7 ชั่วโมง)
+                last_ping = parsed_time.replace(tzinfo=timezone(timedelta(hours=7)))
+            else:
+                return False
+        else:
+            # กรณีที่ตั้งค่าฟิลด์ใน Firestore เป็นประเภท Timestamp เรียบร้อยแล้ว
+            last_ping = last_ping_data
+
+        # 3. คำนวณหาความต่างของเวลาปัจจุบันกับเวลาปิงล่าสุดในรูปแบบ UTC เหมือนกัน
+        now = datetime.now(timezone.utc)
+
+        diff = (
+            now - last_ping
+        ).total_seconds()
+
+        # ตรวจสอบค่าสัมบูรณ์หากเวลาของเซิร์ฟเวอร์ทั้งสองฝั่งไม่ตรงกันเล็กน้อย
+        if abs(diff) > 90:
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"Error validating worker online status: {str(e)}")
         return False
-
-    last_ping = data.get("last_ping")
-
-    if not last_ping:
-        return False
-
-    now = datetime.now(timezone.utc)
-
-    diff = (
-        now - last_ping
-    ).total_seconds()
-
-    if diff > 90:
-        return False
-
-    return True
 
 # =========================================================
 # FIND BEST WORKER
