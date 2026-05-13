@@ -4,6 +4,7 @@ import os
 import json
 import traceback
 import requests
+from datetime import datetime, timezone
 
 import firebase_admin
 
@@ -18,13 +19,13 @@ from firebase_admin import (
 app = Flask(__name__)
 
 # =========================================================
-# HUB FIREBASE ENV
+# ENV
 # =========================================================
-service_account_json = os.environ.get(
+HUB_FIREBASE_SERVICE_KEY = os.environ.get(
     "HUB_FIREBASE_SERVICE_KEY"
 )
 
-if not service_account_json:
+if not HUB_FIREBASE_SERVICE_KEY:
 
     raise RuntimeError(
         "Missing HUB_FIREBASE_SERVICE_KEY"
@@ -33,11 +34,13 @@ if not service_account_json:
 # =========================================================
 # FIREBASE INIT
 # =========================================================
-cred = credentials.Certificate(
-    json.loads(service_account_json)
+hub_cred = credentials.Certificate(
+    json.loads(HUB_FIREBASE_SERVICE_KEY)
 )
 
-firebase_admin.initialize_app(cred)
+firebase_admin.initialize_app(
+    hub_cred
+)
 
 # =========================================================
 # FIRESTORE
@@ -51,6 +54,32 @@ db = firestore.client()
 def home():
 
     return "HUB SWITCH RUNNING"
+
+# =========================================================
+# CHECK WORKER ONLINE
+# =========================================================
+def is_worker_online(data):
+
+    status = data.get("status")
+
+    if status != "online":
+        return False
+
+    last_ping = data.get("last_ping")
+
+    if not last_ping:
+        return False
+
+    now = datetime.now(timezone.utc)
+
+    diff = (
+        now - last_ping
+    ).total_seconds()
+
+    if diff > 90:
+        return False
+
+    return True
 
 # =========================================================
 # FIND BEST WORKER
@@ -72,13 +101,22 @@ def get_best_worker():
 
         data = doc.to_dict()
 
-        if data.get("status") != "online":
+        # =================================================
+        # CHECK ONLINE
+        # =================================================
+        if not is_worker_online(data):
             continue
 
+        # =================================================
+        # LOAD SCORE
+        # =================================================
         load_score = data.get(
             "load_score", 0
         )
 
+        # =================================================
+        # SELECT
+        # =================================================
         if load_score < lowest_load:
 
             lowest_load = load_score
@@ -86,10 +124,13 @@ def get_best_worker():
             selected_server = {
 
                 "server_id":
-                    data.get("server_id"),
+                    doc.id,
 
                 "cloud_url":
-                    data.get("cloud_url")
+                    data.get("cloud_url"),
+
+                "load_score":
+                    load_score
             }
 
     return selected_server
@@ -118,16 +159,26 @@ def webhook():
         if not worker:
 
             return jsonify({
-                "status": "error",
+
+                "status":
+                    "error",
+
                 "message":
                     "no worker available"
+
             }), 500
 
         server_id = worker["server_id"]
 
         cloud_url = worker["cloud_url"]
 
-        print("FORWARD TO :", cloud_url)
+        print(
+            f"FORWARD TO : {server_id}"
+        )
+
+        print(
+            f"URL : {cloud_url}"
+        )
 
         # =================================================
         # FORWARD
@@ -148,6 +199,9 @@ def webhook():
             timeout=30
         )
 
+        # =================================================
+        # RETURN
+        # =================================================
         return jsonify({
 
             "status":
@@ -171,6 +225,7 @@ def webhook():
 
             "message":
                 str(e)
+
         }), 500
 
 # =========================================================
@@ -180,7 +235,9 @@ def webhook():
 def health():
 
     return jsonify({
-        "status": "online"
+
+        "status":
+            "online"
     })
 
 # =========================================================
@@ -189,9 +246,12 @@ def health():
 if __name__ == "__main__":
 
     app.run(
+
         host="0.0.0.0",
+
         port=int(
             os.environ.get("PORT", 8080)
         ),
+
         debug=True
     )
