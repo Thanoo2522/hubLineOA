@@ -66,27 +66,57 @@ def is_worker_online(data):
 
         status = data.get("status")
 
+        print("STATUS =", status)
+
         if status != "online":
+
+            print("STATUS FAIL")
 
             return False
 
         last_ping = data.get("last_ping")
 
+        print("LAST PING =", last_ping)
+
         if not last_ping:
 
+            print("NO LAST PING")
+
             return False
+
+        # =========================================
+        # FIX TIMEZONE
+        # =========================================
+        if last_ping.tzinfo is None:
+
+            last_ping = last_ping.replace(
+                tzinfo=timezone.utc
+            )
 
         now = datetime.now(timezone.utc)
 
         diff = (now - last_ping).total_seconds()
 
-        if abs(diff) > 120:
+        print("TIME DIFF =", diff)
+
+        # =========================================
+        # ONLINE CHECK
+        # =========================================
+        if abs(diff) > 300:
+
+            print("TIMEOUT")
 
             return False
 
+        print("WORKER ONLINE")
+
         return True
 
-    except Exception:
+    except Exception as e:
+
+        print("ONLINE CHECK ERROR")
+
+        print(str(e))
 
         return False
 
