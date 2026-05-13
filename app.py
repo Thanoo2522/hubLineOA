@@ -21,21 +21,21 @@ app = Flask(__name__)
 # =========================================================
 # ENV
 # =========================================================
-HUB_FIREBASE_SERVICE_KEY = os.environ.get(
-    "HUB_FIREBASE_SERVICE_KEY"
+FIREBASE_SERVICE_KEY = os.environ.get(
+    "FIREBASE_SERVICE_KEY"
 )
 
-if not HUB_FIREBASE_SERVICE_KEY:
+if not FIREBASE_SERVICE_KEY:
 
     raise RuntimeError(
-        "Missing HUB_FIREBASE_SERVICE_KEY"
+        "Missing FIREBASE_SERVICE_KEY"
     )
 
 # =========================================================
 # FIREBASE INIT
 # =========================================================
 hub_cred = credentials.Certificate(
-    json.loads(HUB_FIREBASE_SERVICE_KEY)
+    json.loads(FIREBASE_SERVICE_KEY)
 )
 
 firebase_admin.initialize_app(
