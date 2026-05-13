@@ -104,7 +104,8 @@ def is_worker_online(data):
 # FIND BEST WORKER
 # =========================================================
 def get_best_worker():
-
+    print("⏳ กำลังเริ่มดึงข้อมูลจาก Firestore...")
+    
     docs = (
         db.collection("hub_system")
           .document("server_pool")
@@ -113,46 +114,42 @@ def get_best_worker():
     )
 
     selected_server = None
-
     lowest_load = 999999
+    
+    # ตัวแปรจำลองเพื่อใช้นับว่ามีเอกสารวิ่งเข้ามาในลูปบ้างไหม
+    total_documents_found = 0
 
     for doc in docs:
-
+        total_documents_found += 1
         data = doc.to_dict()
+        print(f"📦 เจอเอกสาร ID: {doc.id} -> ข้อมูลที่ดึงได้: {data}")
 
         # =================================================
         # CHECK ONLINE
         # =================================================
         if not is_worker_online(data):
+            print(f"⚠️ เอกสาร ID: {doc.id} ไม่ผ่านเงื่อนไข Online")
             continue
 
         # =================================================
         # LOAD SCORE
         # =================================================
-        load_score = data.get(
-            "load_score", 0
-        )
+        load_score = data.get("load_score", 0)
 
         # =================================================
         # SELECT
         # =================================================
         if load_score < lowest_load:
-
             lowest_load = load_score
-
             selected_server = {
-
-                "server_id":
-                    doc.id,
-
-                "cloud_url":
-                    data.get("cloud_url"),
-
-                "load_score":
-                    load_score
+                "server_id": doc.id,
+                "cloud_url": data.get("cloud_url"),
+                "load_score": load_score
             }
 
+    print(f"📊 สรุปการค้นหา: เจอเอกสารทั้งหมดในคอลเลกชันนี้ {total_documents_found} เครื่อง")
     return selected_server
+
 
 # =========================================================
 # WEBHOOK
