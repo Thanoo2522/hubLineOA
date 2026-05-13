@@ -25,6 +25,7 @@ service_account_json = os.environ.get(
 )
 
 if not service_account_json:
+
     raise RuntimeError(
         "Missing HUB_FIREBASE_SERVICE_KEY"
     )
