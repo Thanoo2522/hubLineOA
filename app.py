@@ -104,7 +104,7 @@ def is_worker_online(data):
 # FIND BEST WORKER
 # =========================================================
 def get_best_worker():
-    print("⏳ กำลังเริ่มดึงข้อมูลจาก Firestore...")
+    print("⏳ เริ่มทำการค้นหาเครื่อง Worker ที่ดีที่สุด...")
     
     docs = (
         db.collection("hub_system")
@@ -115,20 +115,22 @@ def get_best_worker():
 
     selected_server = None
     lowest_load = 999999
-    
-    # ตัวแปรจำลองเพื่อใช้นับว่ามีเอกสารวิ่งเข้ามาในลูปบ้างไหม
-    total_documents_found = 0
 
     for doc in docs:
-        total_documents_found += 1
         data = doc.to_dict()
-        print(f"📦 เจอเอกสาร ID: {doc.id} -> ข้อมูลที่ดึงได้: {data}")
+        
+        # ดึงค่า URL มาตรวจสอบก่อนใช้งานจริง
+        cloud_url = data.get("cloud_url")
+        
+        # ป้องกันแอปพัง: หากไม่มีฟิลด์ cloud_url หรือค่าเป็นค่าว่าง ให้ข้ามเครื่องนี้ไปทันที
+        if not cloud_url:
+            print(f"⚠️ เครื่อง ID: {doc.id} ถูกข้ามเนื่องจาก ไม่มีฟิลด์ cloud_url หรือค่าเป็นค่าว่าง")
+            continue
 
         # =================================================
-        # CHECK ONLINE
+        # CHECK ONLINE (ใช้ฟังก์ชันตรวจสอบตามปกติ)
         # =================================================
         if not is_worker_online(data):
-            print(f"⚠️ เอกสาร ID: {doc.id} ไม่ผ่านเงื่อนไข Online")
             continue
 
         # =================================================
@@ -143,12 +145,17 @@ def get_best_worker():
             lowest_load = load_score
             selected_server = {
                 "server_id": doc.id,
-                "cloud_url": data.get("cloud_url"),
+                "cloud_url": cloud_url, # มั่นใจได้ร้อยเปอร์เซ็นต์ว่าไม่ใช่ค่า None
                 "load_score": load_score
             }
 
-    print(f"📊 สรุปการค้นหา: เจอเอกสารทั้งหมดในคอลเลกชันนี้ {total_documents_found} เครื่อง")
+    if selected_server:
+        print(f"🎯 เลือกเครื่องสำเร็จ: {selected_server['server_id']} URL: {selected_server['cloud_url']}")
+    else:
+        print("❌ ไม่พบเซิร์ฟเวอร์ที่ตรงตามเงื่อนไขและพร้อมใช้งานเลยในระบบ")
+        
     return selected_server
+
 
 
 # =========================================================
