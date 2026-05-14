@@ -126,8 +126,6 @@ def get_best_worker():
 
         if not is_worker_online(data):
 
-            print("WORKER OFFLINE")
-
             continue
 
         cloud_url = data.get("cloud_url")
@@ -234,7 +232,7 @@ def webhook():
         )
 
         # =================================================
-        # UPDATE LOG
+        # UPDATE HUB LOG
         # =================================================
         hub_db.collection("hub_logs") \
               .document(request_id) \
@@ -253,10 +251,7 @@ def webhook():
                 "success",
 
             "worker":
-                server_id,
-
-            "worker_response":
-                response.json()
+                server_id
         })
 
     except Exception as e:
