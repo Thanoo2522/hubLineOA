@@ -6,7 +6,7 @@ import traceback
 import requests
 import uuid
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import firebase_admin
 
@@ -23,31 +23,36 @@ app = Flask(__name__)
 # =========================================================
 # ENV
 # =========================================================
-FIREBASE_SERVICE_KEY = os.environ.get(
-    "FIREBASE_SERVICE_KEY"
+HUB_FIREBASE_KEY = os.environ.get(
+    "HUB_FIREBASE_KEY"
 )
 
-if not FIREBASE_SERVICE_KEY:
+if not HUB_FIREBASE_KEY:
 
     raise RuntimeError(
-        "Missing FIREBASE_SERVICE_KEY"
+        "Missing HUB_FIREBASE_KEY"
     )
 
 # =========================================================
-# FIREBASE INIT
+# INIT HUB FIREBASE
 # =========================================================
 hub_cred = credentials.Certificate(
-    json.loads(FIREBASE_SERVICE_KEY)
+    json.loads(HUB_FIREBASE_KEY)
 )
 
-firebase_admin.initialize_app(
-    hub_cred
+hub_app = firebase_admin.initialize_app(
+
+    hub_cred,
+
+    name="hub"
 )
 
 # =========================================================
-# FIRESTORE
+# HUB FIRESTORE
 # =========================================================
-db = firestore.client()
+hub_db = firestore.client(
+    hub_app
+)
 
 # =========================================================
 # HOME
@@ -66,27 +71,19 @@ def is_worker_online(data):
 
         status = data.get("status")
 
-        print("STATUS =", status)
-
         if status != "online":
-
-            print("STATUS FAIL")
 
             return False
 
         last_ping = data.get("last_ping")
 
-        print("LAST PING =", last_ping)
-
         if not last_ping:
-
-            print("NO LAST PING")
 
             return False
 
-        # =========================================
-        # FIX TIMEZONE
-        # =========================================
+        # =================================================
+        # FIX TZ
+        # =================================================
         if last_ping.tzinfo is None:
 
             last_ping = last_ping.replace(
@@ -99,22 +96,13 @@ def is_worker_online(data):
 
         print("TIME DIFF =", diff)
 
-        # =========================================
-        # ONLINE CHECK
-        # =========================================
         if abs(diff) > 300:
 
-            print("TIMEOUT")
-
             return False
-
-        print("WORKER ONLINE")
 
         return True
 
     except Exception as e:
-
-        print("ONLINE CHECK ERROR")
 
         print(str(e))
 
@@ -126,10 +114,10 @@ def is_worker_online(data):
 def get_best_worker():
 
     docs = (
-        db.collection("hub_system")
-          .document("server_pool")
-          .collection("servers")
-          .stream()
+        hub_db.collection("hub_system")
+              .document("server_pool")
+              .collection("servers")
+              .stream()
     )
 
     selected_server = None
@@ -140,7 +128,21 @@ def get_best_worker():
 
         data = doc.to_dict()
 
+        print("================================")
+        print("DOC :", doc.id)
+        print(data)
+
         if not is_worker_online(data):
+
+            print("WORKER OFFLINE")
+
+            continue
+
+        cloud_url = data.get("cloud_url")
+
+        if not cloud_url:
+
+            print("NO CLOUD URL")
 
             continue
 
@@ -159,11 +161,13 @@ def get_best_worker():
                     doc.id,
 
                 "cloud_url":
-                    data.get("cloud_url"),
+                    cloud_url,
 
                 "load_score":
                     load_score
             }
+
+    print("SELECTED =", selected_server)
 
     return selected_server
 
@@ -191,19 +195,19 @@ def webhook():
         # =================================================
         # SAVE HUB LOG
         # =================================================
-        db.collection("hub_logs") \
-          .document(request_id) \
-          .set({
+        hub_db.collection("hub_logs") \
+              .document(request_id) \
+              .set({
 
-              "request_id":
-                  request_id,
+                  "request_id":
+                      request_id,
 
-              "body":
-                  body,
+                  "body":
+                      body,
 
-              "created_at":
-                  firestore.SERVER_TIMESTAMP
-          })
+                  "created_at":
+                      firestore.SERVER_TIMESTAMP
+              })
 
         # =================================================
         # GET WORKER
@@ -226,8 +230,10 @@ def webhook():
 
         cloud_url = worker["cloud_url"]
 
+        print("FORWARD TO =", cloud_url)
+
         # =================================================
-        # FORWARD TO WORKER
+        # FORWARD
         # =================================================
         response = requests.post(
 
@@ -248,16 +254,16 @@ def webhook():
         # =================================================
         # UPDATE HUB LOG
         # =================================================
-        db.collection("hub_logs") \
-          .document(request_id) \
-          .update({
+        hub_db.collection("hub_logs") \
+              .document(request_id) \
+              .update({
 
-              "worker":
-                  server_id,
+                  "worker":
+                      server_id,
 
-              "worker_status":
-                  response.status_code
-          })
+                  "worker_status":
+                      response.status_code
+              })
 
         # =================================================
         # RETURN
