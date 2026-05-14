@@ -34,7 +34,7 @@ if not HUB_FIREBASE_KEY:
     )
 
 # =========================================================
-# INIT HUB FIREBASE
+# INIT FIREBASE
 # =========================================================
 hub_cred = credentials.Certificate(
     json.loads(HUB_FIREBASE_KEY)
@@ -47,9 +47,6 @@ hub_app = firebase_admin.initialize_app(
     name="hub"
 )
 
-# =========================================================
-# HUB FIRESTORE
-# =========================================================
 hub_db = firestore.client(
     hub_app
 )
@@ -81,9 +78,6 @@ def is_worker_online(data):
 
             return False
 
-        # =================================================
-        # FIX TZ
-        # =================================================
         if last_ping.tzinfo is None:
 
             last_ping = last_ping.replace(
@@ -93,8 +87,6 @@ def is_worker_online(data):
         now = datetime.now(timezone.utc)
 
         diff = (now - last_ping).total_seconds()
-
-        print("TIME DIFF =", diff)
 
         if abs(diff) > 300:
 
@@ -109,7 +101,7 @@ def is_worker_online(data):
         return False
 
 # =========================================================
-# FIND BEST WORKER
+# GET BEST WORKER
 # =========================================================
 def get_best_worker():
 
@@ -142,8 +134,6 @@ def get_best_worker():
 
         if not cloud_url:
 
-            print("NO CLOUD URL")
-
             continue
 
         load_score = data.get(
@@ -161,13 +151,8 @@ def get_best_worker():
                     doc.id,
 
                 "cloud_url":
-                    cloud_url,
-
-                "load_score":
-                    load_score
+                    cloud_url
             }
-
-    print("SELECTED =", selected_server)
 
     return selected_server
 
@@ -187,9 +172,6 @@ def webhook():
             ensure_ascii=False
         ))
 
-        # =================================================
-        # REQUEST ID
-        # =================================================
         request_id = str(uuid.uuid4())
 
         # =================================================
@@ -202,7 +184,7 @@ def webhook():
                   "request_id":
                       request_id,
 
-                  "body":
+                  "raw_body":
                       body,
 
                   "created_at":
@@ -233,7 +215,7 @@ def webhook():
         print("FORWARD TO =", cloud_url)
 
         # =================================================
-        # FORWARD
+        # FORWARD TO WORKER
         # =================================================
         response = requests.post(
 
@@ -248,11 +230,11 @@ def webhook():
                     body
             },
 
-            timeout=30
+            timeout=60
         )
 
         # =================================================
-        # UPDATE HUB LOG
+        # UPDATE LOG
         # =================================================
         hub_db.collection("hub_logs") \
               .document(request_id) \
@@ -265,9 +247,6 @@ def webhook():
                       response.status_code
               })
 
-        # =================================================
-        # RETURN
-        # =================================================
         return jsonify({
 
             "status":
