@@ -252,9 +252,10 @@ def get_worker_url(worker_id):
         })
 
 # =========================================================
-# REPLY LINE BUTTON
+# REPLY REGISTER MESSAGE
 # =========================================================
-def reply_register_button(
+def reply_register_message(
+
     reply_token,
     register_link
 ):
@@ -272,6 +273,11 @@ def reply_register_button(
             "application/json"
     }
 
+    # =====================================================
+    # SEND:
+    # 1. TEXT URL
+    # 2. BUTTON
+    # =====================================================
     payload = {
 
         "replyToken":
@@ -279,6 +285,24 @@ def reply_register_button(
 
         "messages": [
 
+            # =================================================
+            # TEXT MESSAGE
+            # =================================================
+            {
+                "type":
+                    "text",
+
+                "text":
+                    (
+                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
+                        "ลิงก์สมัครสมาชิก:\n"
+                        f"{register_link}"
+                    )
+            },
+
+            # =================================================
+            # BUTTON MESSAGE
+            # =================================================
             {
                 "type":
                     "template",
@@ -295,7 +319,7 @@ def reply_register_button(
                         "ลงทะเบียน",
 
                     "text":
-                        "กรุณาสมัครสมาชิกก่อนใช้งาน",
+                        "กดปุ่มด้านล่างเพื่อสมัครสมาชิก",
 
                     "actions": [
 
@@ -325,11 +349,14 @@ def reply_register_button(
     )
 
     print(
-        "LINE REPLY =",
+        "LINE STATUS =",
         r.status_code
     )
 
-    print(r.text)
+    print(
+        "LINE RESPONSE =",
+        r.text
+    )
 
 # =========================================================
 # WEBHOOK
@@ -397,9 +424,9 @@ def webhook():
             if not user_id:
                 continue
 
-            # =========================================
+            # =================================================
             # CHECK REGISTER
-            # =========================================
+            # =================================================
             check_url = cloud_url.replace(
 
                 "/worker-webhook",
@@ -436,9 +463,9 @@ def webhook():
                 False
             )
 
-            # =========================================
+            # =================================================
             # NOT REGISTER
-            # =========================================
+            # =================================================
             if not is_registered:
 
                 register_link = (
@@ -453,7 +480,7 @@ def webhook():
                     register_link
                 )
 
-                reply_register_button(
+                reply_register_message(
 
                     reply_token,
 
@@ -462,9 +489,9 @@ def webhook():
 
                 continue
 
-            # =========================================
+            # =================================================
             # REGISTERED
-            # =========================================
+            # =================================================
             requests.post(
 
                 cloud_url,
