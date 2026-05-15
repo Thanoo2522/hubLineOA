@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-
+from flask import render_template
 import os
 import json
 import traceback
@@ -27,23 +27,32 @@ HUB_FIREBASE_KEY = os.environ.get(
     "HUB_FIREBASE_KEY"
 )
 
-if not HUB_FIREBASE_KEY:
+REGISTER_URL = os.environ.get(
+    "REGISTER_URL"
+)
 
-    raise RuntimeError(
-        "Missing HUB_FIREBASE_KEY"
-    )
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
+    "LINE_CHANNEL_ACCESS_TOKEN"
+)
 
 # =========================================================
-# INIT FIREBASE
+# CHECK ENV
+# =========================================================
+if not HUB_FIREBASE_KEY:
+    raise RuntimeError("Missing HUB_FIREBASE_KEY")
+
+if not REGISTER_URL:
+    raise RuntimeError("Missing REGISTER_URL")
+
+# =========================================================
+# FIREBASE
 # =========================================================
 hub_cred = credentials.Certificate(
     json.loads(HUB_FIREBASE_KEY)
 )
 
 hub_app = firebase_admin.initialize_app(
-
     hub_cred,
-
     name="hub"
 )
 
@@ -57,7 +66,7 @@ hub_db = firestore.client(
 @app.route("/")
 def home():
 
-    return "HUB SWITCH RUNNING"
+    return "HUB RUNNING"
 
 # =========================================================
 # CHECK WORKER ONLINE
@@ -66,16 +75,12 @@ def is_worker_online(data):
 
     try:
 
-        status = data.get("status")
-
-        if status != "online":
-
+        if data.get("status") != "online":
             return False
 
         last_ping = data.get("last_ping")
 
         if not last_ping:
-
             return False
 
         if last_ping.tzinfo is None:
@@ -86,18 +91,13 @@ def is_worker_online(data):
 
         now = datetime.now(timezone.utc)
 
-        diff = (now - last_ping).total_seconds()
+        diff = (
+            now - last_ping
+        ).total_seconds()
 
-        if abs(diff) > 300:
+        return abs(diff) <= 300
 
-            return False
-
-        return True
-
-    except Exception as e:
-
-        print(str(e))
-
+    except:
         return False
 
 # =========================================================
@@ -112,26 +112,21 @@ def get_best_worker():
               .stream()
     )
 
-    selected_server = None
-
+    selected = None
     lowest_load = 999999
 
     for doc in docs:
 
         data = doc.to_dict()
 
-        print("================================")
-        print("DOC :", doc.id)
-        print(data)
-
         if not is_worker_online(data):
-
             continue
 
-        cloud_url = data.get("cloud_url")
+        cloud_url = data.get(
+            "cloud_url"
+        )
 
         if not cloud_url:
-
             continue
 
         load_score = data.get(
@@ -143,7 +138,7 @@ def get_best_worker():
 
             lowest_load = load_score
 
-            selected_server = {
+            selected = {
 
                 "server_id":
                     doc.id,
@@ -152,7 +147,109 @@ def get_best_worker():
                     cloud_url
             }
 
-    return selected_server
+    return selected
+
+# =========================================================
+# GET WORKER URL
+# =========================================================
+@app.route(
+    "/get-worker-url/<worker_id>"
+)
+def get_worker_url(worker_id):
+
+    try:
+
+        doc = (
+            hub_db.collection("hub_system")
+                  .document("server_pool")
+                  .collection("servers")
+                  .document(worker_id)
+                  .get()
+        )
+
+        if not doc.exists:
+
+            return jsonify({
+
+                "status":
+                    "error",
+
+                "message":
+                    "worker not found"
+            })
+
+        data = doc.to_dict()
+
+        cloud_url = data.get(
+            "cloud_url"
+        )
+
+        register_url = cloud_url.replace(
+
+            "/worker-webhook",
+            "/register"
+        )
+
+        return jsonify({
+
+            "status":
+                "ok",
+
+            "register_url":
+                register_url
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(e)
+        })
+
+# =========================================================
+# REPLY LINE
+# =========================================================
+def reply_line(reply_token, text):
+
+    url = (
+        "https://api.line.me/v2/bot/message/reply"
+    )
+
+    headers = {
+
+        "Authorization":
+            f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+
+        "Content-Type":
+            "application/json"
+    }
+
+    payload = {
+
+        "replyToken":
+            reply_token,
+
+        "messages": [
+
+            {
+                "type":
+                    "text",
+
+                "text":
+                    text
+            }
+        ]
+    }
+
+    requests.post(
+        url,
+        headers=headers,
+        json=payload
+    )
 
 # =========================================================
 # WEBHOOK
@@ -164,34 +261,8 @@ def webhook():
 
         body = request.get_json()
 
-        print(json.dumps(
-            body,
-            indent=2,
-            ensure_ascii=False
-        ))
-
         request_id = str(uuid.uuid4())
 
-        # =================================================
-        # SAVE HUB LOG
-        # =================================================
-        hub_db.collection("hub_logs") \
-              .document(request_id) \
-              .set({
-
-                  "request_id":
-                      request_id,
-
-                  "raw_body":
-                      body,
-
-                  "created_at":
-                      firestore.SERVER_TIMESTAMP
-              })
-
-        # =================================================
-        # GET WORKER
-        # =================================================
         worker = get_best_worker()
 
         if not worker:
@@ -202,56 +273,102 @@ def webhook():
                     "error",
 
                 "message":
-                    "no worker available"
-
-            }), 500
-
-        server_id = worker["server_id"]
+                    "no worker"
+            })
 
         cloud_url = worker["cloud_url"]
 
-        print("FORWARD TO =", cloud_url)
-
-        # =================================================
-        # FORWARD TO WORKER
-        # =================================================
-        response = requests.post(
-
-            cloud_url,
-
-            json={
-
-                "request_id":
-                    request_id,
-
-                "payload":
-                    body
-            },
-
-            timeout=60
+        events = body.get(
+            "events",
+            []
         )
 
-        # =================================================
-        # UPDATE HUB LOG
-        # =================================================
-        hub_db.collection("hub_logs") \
-              .document(request_id) \
-              .update({
+        for event in events:
 
-                  "worker":
-                      server_id,
+            reply_token = event.get(
+                "replyToken"
+            )
 
-                  "worker_status":
-                      response.status_code
-              })
+            source = event.get(
+                "source",
+                {}
+            )
+
+            user_id = source.get(
+                "userId"
+            )
+
+            # =============================================
+            # CHECK REGISTER
+            # =============================================
+            check_url = cloud_url.replace(
+
+                "/worker-webhook",
+                "/check-register"
+            )
+
+            response = requests.post(
+
+                check_url,
+
+                json={
+
+                    "user_id":
+                        user_id
+                }
+            )
+
+            result = response.json()
+
+            is_registered = result.get(
+                "registered",
+                False
+            )
+
+            # =============================================
+            # NOT REGISTER
+            # =============================================
+            if not is_registered:
+
+                register_link = (
+
+                    f"{REGISTER_URL}"
+                    f"?worker={worker['server_id']}"
+                )
+
+                reply_line(
+
+                    reply_token,
+
+                    (
+                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
+                        f"{register_link}"
+                    )
+                )
+
+                continue
+
+            # =============================================
+            # REGISTERED
+            # =============================================
+            requests.post(
+
+                cloud_url,
+
+                json={
+
+                    "request_id":
+                        request_id,
+
+                    "payload":
+                        body
+                }
+            )
 
         return jsonify({
 
             "status":
-                "success",
-
-            "worker":
-                server_id
+                "success"
         })
 
     except Exception as e:
@@ -265,21 +382,16 @@ def webhook():
 
             "message":
                 str(e)
-
         }), 500
-
 # =========================================================
-# HEALTH
+# REGISTER PAGE
 # =========================================================
-@app.route("/health")
-def health():
+@app.route("/register-page")
+def register_page():
 
-    return jsonify({
-
-        "status":
-            "online"
-    })
-
+    return render_template(
+        "register.html"
+    )
 # =========================================================
 # RUN
 # =========================================================
@@ -291,7 +403,5 @@ if __name__ == "__main__":
 
         port=int(
             os.environ.get("PORT", 8080)
-        ),
-
-        debug=True
+        )
     )
