@@ -37,6 +37,17 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
 )
 
 # =========================================================
+# DEBUG ENV
+# =========================================================
+print("=" * 60)
+print("REGISTER_URL =", REGISTER_URL)
+print(
+    "LINE TOKEN EXISTS =",
+    bool(LINE_CHANNEL_ACCESS_TOKEN)
+)
+print("=" * 60)
+
+# =========================================================
 # CHECK ENV
 # =========================================================
 if not HUB_FIREBASE_KEY:
@@ -79,13 +90,75 @@ def home():
     return "HUB RUNNING"
 
 # =========================================================
+# DEBUG WORKERS
+# =========================================================
+@app.route("/debug-workers")
+def debug_workers():
+
+    try:
+
+        result = []
+
+        docs = (
+            hub_db.collection("hub_system")
+                  .document("server_pool")
+                  .collection("servers")
+                  .stream()
+        )
+
+        for doc in docs:
+
+            data = doc.to_dict()
+
+            result.append({
+
+                "doc_id":
+                    doc.id,
+
+                "data":
+                    data
+            })
+
+        return jsonify({
+
+            "status":
+                "ok",
+
+            "workers":
+                result
+        })
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(e)
+        })
+
+# =========================================================
 # CHECK WORKER ONLINE
 # =========================================================
 def is_worker_online(data):
 
     try:
 
+        print(
+            "CHECK ONLINE DATA =",
+            data
+        )
+
         if data.get("status") != "online":
+
+            print(
+                "STATUS NOT ONLINE"
+            )
+
             return False
 
         last_ping = data.get(
@@ -93,6 +166,11 @@ def is_worker_online(data):
         )
 
         if not last_ping:
+
+            print(
+                "NO LAST PING"
+            )
+
             return False
 
         if last_ping.tzinfo is None:
@@ -109,9 +187,19 @@ def is_worker_online(data):
             now - last_ping
         ).total_seconds()
 
+        print(
+            "PING DIFF =",
+            diff
+        )
+
         return abs(diff) <= 300
 
-    except:
+    except Exception as e:
+
+        print(
+            "ONLINE CHECK ERROR =",
+            str(e)
+        )
 
         return False
 
@@ -119,6 +207,10 @@ def is_worker_online(data):
 # GET BEST WORKER
 # =========================================================
 def get_best_worker():
+
+    print("=" * 60)
+    print("GET BEST WORKER")
+    print("=" * 60)
 
     docs = (
         hub_db.collection("hub_system")
@@ -137,6 +229,11 @@ def get_best_worker():
 
         print(
             f"CHECK WORKER => {doc.id}"
+        )
+
+        print(
+            "WORKER DATA =",
+            data
         )
 
         if not is_worker_online(data):
@@ -186,6 +283,8 @@ def get_best_worker():
         selected
     )
 
+    print("=" * 60)
+
     return selected
 
 # =========================================================
@@ -198,6 +297,11 @@ def get_worker_url(worker_id):
 
     try:
 
+        print(
+            "GET WORKER URL =",
+            worker_id
+        )
+
         doc = (
             hub_db.collection("hub_system")
                   .document("server_pool")
@@ -207,6 +311,10 @@ def get_worker_url(worker_id):
         )
 
         if not doc.exists:
+
+            print(
+                "WORKER NOT FOUND"
+            )
 
             return jsonify({
 
@@ -219,6 +327,11 @@ def get_worker_url(worker_id):
 
         data = doc.to_dict()
 
+        print(
+            "WORKER DOC =",
+            data
+        )
+
         cloud_url = data.get(
             "cloud_url"
         )
@@ -227,6 +340,11 @@ def get_worker_url(worker_id):
 
             "/worker-webhook",
             "/register"
+        )
+
+        print(
+            "REGISTER URL =",
+            register_url
         )
 
         return jsonify({
@@ -260,61 +378,91 @@ def reply_register_message(
     register_link
 ):
 
-    url = (
-        "https://api.line.me/v2/bot/message/reply"
-    )
+    try:
 
-    headers = {
+        print("=" * 60)
+        print("SEND LINE REPLY")
+        print("=" * 60)
 
-        "Authorization":
-            f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        print(
+            "REGISTER LINK =",
+            register_link
+        )
 
-        "Content-Type":
-            "application/json"
-    }
+        url = (
+            "https://api.line.me/v2/bot/message/reply"
+        )
 
-    # =====================================================
-    # SIMPLE TEXT ONLY
-    # =====================================================
-    payload = {
+        headers = {
 
-        "replyToken":
-            reply_token,
+            "Authorization":
+                f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
 
-        "messages": [
+            "Content-Type":
+                "application/json"
+        }
 
-            {
-                "type":
-                    "text",
+        payload = {
 
-                "text":
-                    (
-                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
-                        "กดลิงก์ด้านล่าง\n\n"
-                        f"{register_link}"
-                    )
-            }
-        ]
-    }
+            "replyToken":
+                reply_token,
 
-    r = requests.post(
+            "messages": [
 
-        url,
+                {
+                    "type":
+                        "text",
 
-        headers=headers,
+                    "text":
+                        (
+                            "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
+                            "กดลิงก์ด้านล่าง\n\n"
+                            f"{register_link}"
+                        )
+                }
+            ]
+        }
 
-        json=payload
-    )
+        print(
+            "LINE PAYLOAD =",
+            json.dumps(
+                payload,
+                indent=2,
+                ensure_ascii=False
+            )
+        )
 
-    print(
-        "LINE STATUS =",
-        r.status_code
-    )
+        r = requests.post(
 
-    print(
-        "LINE RESPONSE =",
-        r.text
-    )
+            url,
+
+            headers=headers,
+
+            json=payload,
+
+            timeout=10
+        )
+
+        print(
+            "LINE STATUS =",
+            r.status_code
+        )
+
+        print(
+            "LINE RESPONSE =",
+            r.text
+        )
+
+        print("=" * 60)
+
+    except Exception as e:
+
+        print(
+            "LINE REPLY ERROR =",
+            str(e)
+        )
+
+        traceback.print_exc()
 
 # =========================================================
 # WEBHOOK
@@ -326,6 +474,10 @@ def reply_register_message(
 def webhook():
 
     try:
+
+        print("=" * 60)
+        print("WEBHOOK START")
+        print("=" * 60)
 
         body = request.get_json()
 
@@ -342,9 +494,18 @@ def webhook():
             uuid.uuid4()
         )
 
+        print(
+            "REQUEST ID =",
+            request_id
+        )
+
         worker = get_best_worker()
 
         if not worker:
+
+            print(
+                "NO WORKER FOUND"
+            )
 
             return jsonify({
 
@@ -359,12 +520,34 @@ def webhook():
             "cloud_url"
         ]
 
+        print(
+            "SELECT CLOUD URL =",
+            cloud_url
+        )
+
         events = body.get(
             "events",
             []
         )
 
+        print(
+            "EVENT COUNT =",
+            len(events)
+        )
+
         for event in events:
+
+            print("=" * 60)
+            print("PROCESS EVENT")
+            print("=" * 60)
+
+            print(
+                json.dumps(
+                    event,
+                    indent=2,
+                    ensure_ascii=False
+                )
+            )
 
             reply_token = event.get(
                 "replyToken"
@@ -379,7 +562,17 @@ def webhook():
                 "userId"
             )
 
+            print(
+                "USER ID =",
+                user_id
+            )
+
             if not user_id:
+
+                print(
+                    "NO USER ID"
+                )
+
                 continue
 
             # =================================================
@@ -464,7 +657,7 @@ def webhook():
                 "FORWARD TO WORKER"
             )
 
-            requests.post(
+            worker_response = requests.post(
 
                 cloud_url,
 
@@ -480,6 +673,20 @@ def webhook():
                 timeout=10
             )
 
+            print(
+                "WORKER STATUS =",
+                worker_response.status_code
+            )
+
+            print(
+                "WORKER TEXT =",
+                worker_response.text
+            )
+
+        print("=" * 60)
+        print("WEBHOOK END")
+        print("=" * 60)
+
         return jsonify({
 
             "status":
@@ -487,6 +694,11 @@ def webhook():
         })
 
     except Exception as e:
+
+        print(
+            "WEBHOOK ERROR =",
+            str(e)
+        )
 
         traceback.print_exc()
 
@@ -504,6 +716,10 @@ def webhook():
 # =========================================================
 @app.route("/register-page")
 def register_page():
+
+    print(
+        "OPEN REGISTER PAGE"
+    )
 
     return render_template(
         "register.html"
