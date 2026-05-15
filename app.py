@@ -274,9 +274,7 @@ def reply_register_message(
     }
 
     # =====================================================
-    # SEND:
-    # 1. TEXT URL
-    # 2. BUTTON
+    # SIMPLE TEXT ONLY
     # =====================================================
     payload = {
 
@@ -285,9 +283,6 @@ def reply_register_message(
 
         "messages": [
 
-            # =================================================
-            # TEXT MESSAGE
-            # =================================================
             {
                 "type":
                     "text",
@@ -295,46 +290,9 @@ def reply_register_message(
                 "text":
                     (
                         "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
-                        "ลิงก์สมัครสมาชิก:\n"
+                        "กดลิงก์ด้านล่าง\n\n"
                         f"{register_link}"
                     )
-            },
-
-            # =================================================
-            # BUTTON MESSAGE
-            # =================================================
-            {
-                "type":
-                    "template",
-
-                "altText":
-                    "สมัครสมาชิก",
-
-                "template": {
-
-                    "type":
-                        "buttons",
-
-                    "title":
-                        "ลงทะเบียน",
-
-                    "text":
-                        "กดปุ่มด้านล่างเพื่อสมัครสมาชิก",
-
-                    "actions": [
-
-                        {
-                            "type":
-                                "uri",
-
-                            "label":
-                                "สมัครสมาชิก",
-
-                            "uri":
-                                register_link
-                        }
-                    ]
-                }
             }
         ]
     }
@@ -451,16 +409,26 @@ def webhook():
                 timeout=10
             )
 
-            result = response.json()
+            print(
+                "CHECK STATUS =",
+                response.status_code
+            )
 
             print(
-                "CHECK RESULT =",
-                result
+                "CHECK TEXT =",
+                response.text
             )
+
+            result = response.json()
 
             is_registered = result.get(
                 "registered",
                 False
+            )
+
+            print(
+                "REGISTERED =",
+                is_registered
             )
 
             # =================================================
@@ -492,6 +460,10 @@ def webhook():
             # =================================================
             # REGISTERED
             # =================================================
+            print(
+                "FORWARD TO WORKER"
+            )
+
             requests.post(
 
                 cloud_url,
@@ -529,7 +501,7 @@ def webhook():
 
 # =========================================================
 # REGISTER PAGE
-# =======================================================
+# =========================================================
 @app.route("/register-page")
 def register_page():
 
