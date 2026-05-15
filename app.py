@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask import render_template
+
 import os
 import json
 import traceback
@@ -39,10 +40,19 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
 # CHECK ENV
 # =========================================================
 if not HUB_FIREBASE_KEY:
-    raise RuntimeError("Missing HUB_FIREBASE_KEY")
+    raise RuntimeError(
+        "Missing HUB_FIREBASE_KEY"
+    )
 
 if not REGISTER_URL:
-    raise RuntimeError("Missing REGISTER_URL")
+    raise RuntimeError(
+        "Missing REGISTER_URL"
+    )
+
+if not LINE_CHANNEL_ACCESS_TOKEN:
+    raise RuntimeError(
+        "Missing LINE_CHANNEL_ACCESS_TOKEN"
+    )
 
 # =========================================================
 # FIREBASE
@@ -78,7 +88,9 @@ def is_worker_online(data):
         if data.get("status") != "online":
             return False
 
-        last_ping = data.get("last_ping")
+        last_ping = data.get(
+            "last_ping"
+        )
 
         if not last_ping:
             return False
@@ -89,7 +101,9 @@ def is_worker_online(data):
                 tzinfo=timezone.utc
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(
+            timezone.utc
+        )
 
         diff = (
             now - last_ping
@@ -98,6 +112,7 @@ def is_worker_online(data):
         return abs(diff) <= 300
 
     except:
+
         return False
 
 # =========================================================
@@ -113,13 +128,23 @@ def get_best_worker():
     )
 
     selected = None
+
     lowest_load = 999999
 
     for doc in docs:
 
         data = doc.to_dict()
 
+        print(
+            f"CHECK WORKER => {doc.id}"
+        )
+
         if not is_worker_online(data):
+
+            print(
+                f"{doc.id} OFFLINE"
+            )
+
             continue
 
         cloud_url = data.get(
@@ -127,11 +152,20 @@ def get_best_worker():
         )
 
         if not cloud_url:
+
+            print(
+                f"{doc.id} NO URL"
+            )
+
             continue
 
         load_score = data.get(
             "load_score",
             0
+        )
+
+        print(
+            f"{doc.id} load={load_score}"
         )
 
         if load_score < lowest_load:
@@ -146,6 +180,11 @@ def get_best_worker():
                 "cloud_url":
                     cloud_url
             }
+
+    print(
+        "SELECTED WORKER =",
+        selected
+    )
 
     return selected
 
@@ -201,6 +240,8 @@ def get_worker_url(worker_id):
 
     except Exception as e:
 
+        traceback.print_exc()
+
         return jsonify({
 
             "status":
@@ -211,9 +252,12 @@ def get_worker_url(worker_id):
         })
 
 # =========================================================
-# REPLY LINE
+# REPLY LINE BUTTON
 # =========================================================
-def reply_line(reply_token, text):
+def reply_register_button(
+    reply_token,
+    register_link
+):
 
     url = (
         "https://api.line.me/v2/bot/message/reply"
@@ -237,31 +281,81 @@ def reply_line(reply_token, text):
 
             {
                 "type":
-                    "text",
+                    "template",
 
-                "text":
-                    text
+                "altText":
+                    "สมัครสมาชิก",
+
+                "template": {
+
+                    "type":
+                        "buttons",
+
+                    "title":
+                        "ลงทะเบียน",
+
+                    "text":
+                        "กรุณาสมัครสมาชิกก่อนใช้งาน",
+
+                    "actions": [
+
+                        {
+                            "type":
+                                "uri",
+
+                            "label":
+                                "สมัครสมาชิก",
+
+                            "uri":
+                                register_link
+                        }
+                    ]
+                }
             }
         ]
     }
 
-    requests.post(
+    r = requests.post(
+
         url,
+
         headers=headers,
+
         json=payload
     )
+
+    print(
+        "LINE REPLY =",
+        r.status_code
+    )
+
+    print(r.text)
 
 # =========================================================
 # WEBHOOK
 # =========================================================
-@app.route("/webhook", methods=["POST"])
+@app.route(
+    "/webhook",
+    methods=["POST"]
+)
 def webhook():
 
     try:
 
         body = request.get_json()
 
-        request_id = str(uuid.uuid4())
+        print(json.dumps(
+
+            body,
+
+            indent=2,
+
+            ensure_ascii=False
+        ))
+
+        request_id = str(
+            uuid.uuid4()
+        )
 
         worker = get_best_worker()
 
@@ -276,7 +370,9 @@ def webhook():
                     "no worker"
             })
 
-        cloud_url = worker["cloud_url"]
+        cloud_url = worker[
+            "cloud_url"
+        ]
 
         events = body.get(
             "events",
@@ -298,13 +394,21 @@ def webhook():
                 "userId"
             )
 
-            # =============================================
+            if not user_id:
+                continue
+
+            # =========================================
             # CHECK REGISTER
-            # =============================================
+            # =========================================
             check_url = cloud_url.replace(
 
                 "/worker-webhook",
                 "/check-register"
+            )
+
+            print(
+                "CHECK URL =",
+                check_url
             )
 
             response = requests.post(
@@ -315,42 +419,52 @@ def webhook():
 
                     "user_id":
                         user_id
-                }
+                },
+
+                timeout=10
             )
 
             result = response.json()
+
+            print(
+                "CHECK RESULT =",
+                result
+            )
 
             is_registered = result.get(
                 "registered",
                 False
             )
 
-            # =============================================
+            # =========================================
             # NOT REGISTER
-            # =============================================
+            # =========================================
             if not is_registered:
 
                 register_link = (
 
                     f"{REGISTER_URL}"
+                    f"/register-page"
                     f"?worker={worker['server_id']}"
                 )
 
-                reply_line(
+                print(
+                    "REGISTER LINK =",
+                    register_link
+                )
+
+                reply_register_button(
 
                     reply_token,
 
-                    (
-                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
-                        f"{register_link}"
-                    )
+                    register_link
                 )
 
                 continue
 
-            # =============================================
+            # =========================================
             # REGISTERED
-            # =============================================
+            # =========================================
             requests.post(
 
                 cloud_url,
@@ -362,7 +476,9 @@ def webhook():
 
                     "payload":
                         body
-                }
+                },
+
+                timeout=10
             )
 
         return jsonify({
@@ -383,7 +499,8 @@ def webhook():
             "message":
                 str(e)
         }), 500
-# =======================================================
+
+# =========================================================
 # REGISTER PAGE
 # =========================================================
 @app.route("/register-page")
@@ -392,6 +509,7 @@ def register_page():
     return render_template(
         "register.html"
     )
+
 # =========================================================
 # RUN
 # =========================================================
@@ -402,6 +520,9 @@ if __name__ == "__main__":
         host="0.0.0.0",
 
         port=int(
-            os.environ.get("PORT", 8080)
+            os.environ.get(
+                "PORT",
+                8080
+            )
         )
     )
