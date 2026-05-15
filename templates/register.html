@@ -1,3 +1,32 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <title>Register</title>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+</head>
+
+<body>
+
+<h2>สมัครสมาชิก</h2>
+
+<input id="name" placeholder="ชื่อ"><br><br>
+
+<input id="phone" placeholder="เบอร์โทร"><br><br>
+
+<input id="address" placeholder="ที่อยู่"><br><br>
+
+<button onclick="registerUser()">
+สมัครสมาชิก
+</button>
+
+<p id="status">กำลังโหลด...</p>
+
 <script>
 
 const LIFF_ID =
@@ -9,52 +38,13 @@ const HUB_URL =
 let WORKER_URL = ""
 let WORKER_ID = ""
 
-// =====================================================
-// STATUS
-// =====================================================
-function setStatus(text) {
-
-  document.getElementById(
-    "status"
-  ).innerText = text
-}
-
-// =====================================================
-// INIT
-// =====================================================
 async function init() {
 
   try {
 
-    setStatus("1. เริ่มต้นระบบ")
-
-    // ===============================================
-    // LIFF INIT
-    // ===============================================
-    await liff.init({
-
-      liffId: LIFF_ID
-    })
-
-    setStatus("2. LIFF INIT สำเร็จ")
-
-    // ===============================================
-    // LOGIN
-    // ===============================================
-    if (!liff.isLoggedIn()) {
-
-      setStatus("3. LOGIN")
-
-      liff.login()
-
-      return
-    }
-
-    setStatus("4. LOGIN SUCCESS")
-
-    // ===============================================
-    // GET WORKER
-    // ===============================================
+    // =========================================
+    // GET worker ก่อน login
+    // =========================================
     const params =
       new URLSearchParams(
         window.location.search
@@ -68,28 +58,58 @@ async function init() {
       WORKER_ID
     )
 
+    // =========================================
+    // SAVE worker
+    // =========================================
+    if (WORKER_ID) {
+
+      localStorage.setItem(
+        "worker_id",
+        WORKER_ID
+      )
+    }
+
+    // =========================================
+    // RESTORE worker
+    // =========================================
     if (!WORKER_ID) {
 
-      alert("ไม่พบ worker")
+      WORKER_ID =
+        localStorage.getItem(
+          "worker_id"
+        )
+    }
+
+    console.log(
+      "RESTORE WORKER =",
+      WORKER_ID
+    )
+
+    // =========================================
+    // LIFF INIT
+    // =========================================
+    await liff.init({
+
+      liffId: LIFF_ID
+    })
+
+    // =========================================
+    // LOGIN
+    // =========================================
+    if (!liff.isLoggedIn()) {
+
+      liff.login()
 
       return
     }
 
-    setStatus(
-      "5. โหลด worker"
-    )
-
-    // ===============================================
+    // =========================================
     // LOAD WORKER URL
-    // ===============================================
+    // =========================================
     const response = await fetch(
 
       `${HUB_URL}/get-worker-url/${WORKER_ID}`
 
-    )
-
-    setStatus(
-      "6. โหลด worker สำเร็จ"
     )
 
     const json =
@@ -97,58 +117,30 @@ async function init() {
 
     console.log(json)
 
-    if (json.status !== "ok") {
-
-      alert("โหลด worker ไม่สำเร็จ")
-
-      return
-    }
-
     WORKER_URL =
       json.register_url
 
-    console.log(
-      "WORKER_URL =",
-      WORKER_URL
-    )
-
-    setStatus("พร้อมสมัครสมาชิก")
+    document.getElementById(
+      "status"
+    ).innerText = "พร้อมสมัคร"
 
   } catch(err) {
 
     console.error(err)
 
     alert(
-
-      "INIT ERROR\n\n" +
-
-      JSON.stringify(err)
+      "INIT ERROR : " + err
     )
-
-    setStatus("ERROR")
   }
 }
 
-// =====================================================
-// REGISTER
-// =====================================================
 async function registerUser() {
 
   try {
 
-    setStatus("กำลังสมัคร...")
-
-    // ===============================================
-    // GET PROFILE
-    // ===============================================
     const profile =
       await liff.getProfile()
 
-    console.log(profile)
-
-    // ===============================================
-    // PAYLOAD
-    // ===============================================
     const payload = {
 
       userId:
@@ -175,9 +167,6 @@ async function registerUser() {
 
     console.log(payload)
 
-    // ===============================================
-    // SEND REGISTER
-    // ===============================================
     const response = await fetch(
 
       WORKER_URL,
@@ -203,51 +192,30 @@ async function registerUser() {
 
     console.log(json)
 
-    // ===============================================
-    // SUCCESS
-    // ===============================================
     if (json.status === "ok") {
-
-      setStatus("สมัครสำเร็จ")
 
       alert("สมัครสำเร็จ")
 
-      // ===========================================
-      // CLOSE WINDOW
-      // ===========================================
-      if (liff.isInClient()) {
+      liff.closeWindow()
 
-        liff.closeWindow()
-      }
+    } else {
 
-      return
+      alert("สมัครไม่สำเร็จ")
     }
-
-    // ===============================================
-    // FAIL
-    // ===============================================
-    alert("สมัครไม่สำเร็จ")
-
-    setStatus("สมัครไม่สำเร็จ")
 
   } catch(err) {
 
     console.error(err)
 
     alert(
-
-      "REGISTER ERROR\n\n" +
-
-      JSON.stringify(err)
+      "REGISTER ERROR : " + err
     )
-
-    setStatus("ERROR")
   }
 }
 
-// =====================================================
-// START
-// =====================================================
 init()
 
 </script>
+
+</body>
+</html>
