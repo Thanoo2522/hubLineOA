@@ -1,39 +1,7 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-
-  <meta charset="UTF-8">
-
-  <title>Register</title>
-
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-
-</head>
-
-<body>
-
-<h2>สมัครสมาชิก</h2>
-
-<input id="name" placeholder="ชื่อ"><br><br>
-
-<input id="phone" placeholder="เบอร์โทร"><br><br>
-
-<input id="address" placeholder="ที่อยู่"><br><br>
-
-<button onclick="registerUser()">
-สมัครสมาชิก
-</button>
-
-<p id="status">กำลังโหลด...</p>
-
 <script>
 
-const LIFF_ID =
-  "2010064672-zx1EQTMH"
-
-const HUB_URL =
-  "https://hublineoa-369387278497.asia-southeast3.run.app"
+const LIFF_ID = "2010064672-zx1EQTMH"
+const HUB_URL = "https://hublineoa-369387278497.asia-southeast3.run.app"
 
 let WORKER_URL = ""
 let WORKER_ID = ""
@@ -42,95 +10,38 @@ async function init() {
 
   try {
 
-    // =========================================
-    // GET worker ก่อน login
-    // =========================================
-    const params =
-      new URLSearchParams(
-        window.location.search
-      )
+    const params = new URLSearchParams(window.location.search)
 
-    WORKER_ID =
-      params.get("worker")
+    WORKER_ID = params.get("worker")
 
-    console.log(
-      "WORKER_ID =",
-      WORKER_ID
-    )
-
-    // =========================================
-    // SAVE worker
-    // =========================================
-    if (WORKER_ID) {
-
-      localStorage.setItem(
-        "worker_id",
-        WORKER_ID
-      )
-    }
-
-    // =========================================
-    // RESTORE worker
-    // =========================================
     if (!WORKER_ID) {
-
-      WORKER_ID =
-        localStorage.getItem(
-          "worker_id"
-        )
-    }
-
-    console.log(
-      "RESTORE WORKER =",
-      WORKER_ID
-    )
-
-    // =========================================
-    // LIFF INIT
-    // =========================================
-    await liff.init({
-
-      liffId: LIFF_ID
-    })
-
-    // =========================================
-    // LOGIN
-    // =========================================
-    if (!liff.isLoggedIn()) {
-
-      liff.login()
-
+      alert("NO WORKER ID")
       return
     }
 
-    // =========================================
-    // LOAD WORKER URL
-    // =========================================
-    const response = await fetch(
+    const response = await fetch(`${HUB_URL}/get-worker-url/${WORKER_ID}`)
+    const json = await response.json()
 
-      `${HUB_URL}/get-worker-url/${WORKER_ID}`
+    console.log("WORKER URL:", json)
 
-    )
+    if (!json.register_url) {
+      alert("NO REGISTER URL")
+      return
+    }
 
-    const json =
-      await response.json()
+    WORKER_URL = json.register_url
 
-    console.log(json)
+    await liff.init({ liffId: LIFF_ID })
 
-    WORKER_URL =
-      json.register_url
+    if (!liff.isLoggedIn()) {
+      liff.login()
+      return
+    }
 
-    document.getElementById(
-      "status"
-    ).innerText = "พร้อมสมัคร"
+    document.getElementById("status").innerText = "พร้อมสมัคร"
 
-  } catch(err) {
-
-    console.error(err)
-
-    alert(
-      "INIT ERROR : " + err
-    )
+  } catch (err) {
+    alert("INIT ERROR: " + err)
   }
 }
 
@@ -138,84 +49,37 @@ async function registerUser() {
 
   try {
 
-    const profile =
-      await liff.getProfile()
+    const profile = await liff.getProfile()
 
     const payload = {
 
-      userId:
-        profile.userId,
-
-      displayName:
-        profile.displayName,
-
-      pictureUrl:
-        profile.pictureUrl,
-
-      workerId:
-        WORKER_ID,
-
-      name:
-        document.getElementById("name").value,
-
-      phone:
-        document.getElementById("phone").value,
-
-      address:
-        document.getElementById("address").value
+      userId: profile.userId,
+      displayName: profile.displayName,
+      pictureUrl: profile.pictureUrl,
+      workerId: WORKER_ID,
+      name: document.getElementById("name").value,
+      phone: document.getElementById("phone").value,
+      address: document.getElementById("address").value
     }
 
-    console.log(payload)
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    })
 
-    const response = await fetch(
-
-      WORKER_URL,
-
-      {
-
-        method: "POST",
-
-        headers: {
-
-          "Content-Type":
-            "application/json"
-        },
-
-        body: JSON.stringify(
-          payload
-        )
-      }
-    )
-
-    const json =
-      await response.json()
-
-    console.log(json)
+    const json = await res.json()
 
     if (json.status === "ok") {
-
       alert("สมัครสำเร็จ")
-
       liff.closeWindow()
-
-    } else {
-
-      alert("สมัครไม่สำเร็จ")
     }
 
-  } catch(err) {
-
-    console.error(err)
-
-    alert(
-      "REGISTER ERROR : " + err
-    )
+  } catch (err) {
+    alert("REGISTER ERROR: " + err)
   }
 }
 
 init()
 
 </script>
-
-</body>
-</html>
