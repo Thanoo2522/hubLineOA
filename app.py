@@ -21,11 +21,8 @@ app = Flask(__name__)
 HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
 REGISTER_URL = os.environ.get("REGISTER_URL")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-LIFF_ID = os.environ.get("LIFF_ID")  # 🔥 ADD NEW
+LIFF_ID = os.environ.get("LIFF_ID")
 
-# =========================================================
-# CHECK ENV
-# =========================================================
 if not HUB_FIREBASE_KEY:
     raise RuntimeError("Missing HUB_FIREBASE_KEY")
 
@@ -53,16 +50,14 @@ def home():
     return "HUB RUNNING"
 
 # =========================================================
-# WORKER ONLINE CHECK
+# WORKER ONLINE CHECK (UNCHANGED)
 # =========================================================
 def is_worker_online(data):
-
     try:
         if data.get("status") != "online":
             return False
 
         last_heartbeat = data.get("last_heartbeat")
-
         if not last_heartbeat:
             return False
 
@@ -76,7 +71,7 @@ def is_worker_online(data):
         return False
 
 # =========================================================
-# GET BEST WORKER
+# GET BEST WORKER (UNCHANGED)
 # =========================================================
 def get_best_worker():
 
@@ -112,7 +107,7 @@ def get_best_worker():
     return selected
 
 # =========================================================
-# REPLY MESSAGE
+# 🔥 NEW: LINE BUTTON MESSAGE (FIX UI CLICKABLE LINK)
 # =========================================================
 def reply_register_message(reply_token, register_link):
 
@@ -127,8 +122,19 @@ def reply_register_message(reply_token, register_link):
         "replyToken": reply_token,
         "messages": [
             {
-                "type": "text",
-                "text": "กรุณาลงทะเบียนก่อนใช้งาน\n\nกดลิงก์ด้านล่าง\n\n" + register_link
+                "type": "template",
+                "altText": "กรุณาลงทะเบียน",
+                "template": {
+                    "type": "buttons",
+                    "text": "กรุณาลงทะเบียนก่อนใช้งาน",
+                    "actions": [
+                        {
+                            "type": "uri",
+                            "label": "👉 สมัครสมาชิก",
+                            "uri": register_link
+                        }
+                    ]
+                }
             }
         ]
     }
@@ -136,7 +142,7 @@ def reply_register_message(reply_token, register_link):
     requests.post(url, headers=headers, json=payload)
 
 # =========================================================
-# WEBHOOK (MAIN LOGIC)
+# WEBHOOK (UNCHANGED LOGIC)
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -162,23 +168,17 @@ def webhook():
             if not user_id:
                 continue
 
-            # =================================================
-            # CHECK REGISTER
-            # =================================================
+            # check register
             check_url = cloud_url + "/check-register"
 
-            res = requests.post(check_url, json={
-                "user_id": user_id
-            })
-
+            res = requests.post(check_url, json={"user_id": user_id})
             result = res.json()
 
             # =================================================
-            # NOT REGISTERED → SEND LIFF LINK
+            # NOT REGISTER → SEND LIFF BUTTON
             # =================================================
             if not result.get("registered", False):
 
-                # 🔥 NEW LIFF LINK FORMAT
                 register_link = (
                     f"https://liff.line.me/{LIFF_ID}"
                     f"?worker={worker['server_id']}"
@@ -188,7 +188,7 @@ def webhook():
                 continue
 
             # =================================================
-            # REGISTERED → FORWARD TO WORKER
+            # REGISTERED → FORWARD
             # =================================================
             requests.post(cloud_url, json={
                 "request_id": request_id,
