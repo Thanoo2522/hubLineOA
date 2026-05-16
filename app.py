@@ -7,6 +7,8 @@ import traceback
 import requests
 import uuid
 
+import time
+
 from datetime import datetime, timezone
 
 import firebase_admin
@@ -148,12 +150,22 @@ def is_worker_online(data):
 
     try:
 
-        print(
-            "CHECK ONLINE DATA =",
-            data
+        print("=" * 60)
+        print("CHECK ONLINE DATA")
+        print("=" * 60)
+
+        print(data)
+
+        status = data.get(
+            "status"
         )
 
-        if data.get("status") != "online":
+        print(
+            "STATUS =",
+            status
+        )
+
+        if status != "online":
 
             print(
                 "STATUS NOT ONLINE"
@@ -161,6 +173,54 @@ def is_worker_online(data):
 
             return False
 
+        # =================================================
+        # PRIORITY 1:
+        # last_heartbeat (unix timestamp)
+        # =================================================
+        last_heartbeat = data.get(
+            "last_heartbeat"
+        )
+
+        if last_heartbeat:
+
+            print(
+                "USE last_heartbeat"
+            )
+
+            now = int(time.time())
+
+            diff = now - int(
+                last_heartbeat
+            )
+
+            print(
+                "NOW =",
+                now
+            )
+
+            print(
+                "LAST HEARTBEAT =",
+                last_heartbeat
+            )
+
+            print(
+                "DIFF =",
+                diff
+            )
+
+            online = abs(diff) <= 300
+
+            print(
+                "ONLINE =",
+                online
+            )
+
+            return online
+
+        # =================================================
+        # FALLBACK:
+        # old firestore timestamp
+        # =================================================
         last_ping = data.get(
             "last_ping"
         )
@@ -192,7 +252,14 @@ def is_worker_online(data):
             diff
         )
 
-        return abs(diff) <= 300
+        online = abs(diff) <= 300
+
+        print(
+            "ONLINE =",
+            online
+        )
+
+        return online
 
     except Exception as e:
 
@@ -200,6 +267,8 @@ def is_worker_online(data):
             "ONLINE CHECK ERROR =",
             str(e)
         )
+
+        traceback.print_exc()
 
         return False
 
