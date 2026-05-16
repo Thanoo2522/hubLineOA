@@ -107,7 +107,7 @@ def get_best_worker():
     return selected
 
 # =========================================================
-# 🔥 NEW: LINE BUTTON MESSAGE (FIX UI CLICKABLE LINK)
+# 🔥 FIX: LINE BUTTON (CLICKABLE REGISTER LINK)
 # =========================================================
 def reply_register_message(reply_token, register_link):
 
@@ -122,24 +122,48 @@ def reply_register_message(reply_token, register_link):
         "replyToken": reply_token,
         "messages": [
             {
-                "type": "template",
+                "type": "flex",
                 "altText": "กรุณาลงทะเบียน",
-                "template": {
-                    "type": "buttons",
-                    "text": "กรุณาลงทะเบียนก่อนใช้งาน",
-                    "actions": [
-                        {
-                            "type": "uri",
-                            "label": "👉 สมัครสมาชิก",
-                            "uri": register_link
-                        }
-                    ]
+                "contents": {
+                    "type": "bubble",
+                    "body": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": "กรุณาลงทะเบียนก่อนใช้งาน",
+                                "weight": "bold",
+                                "size": "md"
+                            }
+                        ]
+                    },
+                    "footer": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "button",
+                                "style": "primary",
+                                "action": {
+                                    "type": "uri",
+                                    "label": "สมัครสมาชิก",
+                                    "uri": register_link
+                                }
+                            }
+                        ]
+                    }
                 }
             }
         ]
     }
 
-    requests.post(url, headers=headers, json=payload)
+    try:
+        res = requests.post(url, headers=headers, json=payload)
+        print("LINE STATUS:", res.status_code)
+        print("LINE RESPONSE:", res.text)
+    except Exception as e:
+        print("LINE ERROR:", str(e))
 
 # =========================================================
 # WEBHOOK (UNCHANGED LOGIC)
@@ -168,14 +192,16 @@ def webhook():
             if not user_id:
                 continue
 
-            # check register
+            # =================================================
+            # CHECK REGISTER (UNCHANGED)
+            # =================================================
             check_url = cloud_url + "/check-register"
 
             res = requests.post(check_url, json={"user_id": user_id})
             result = res.json()
 
             # =================================================
-            # NOT REGISTER → SEND LIFF BUTTON
+            # NOT REGISTERED → SHOW BUTTON LINK (FIX HERE)
             # =================================================
             if not result.get("registered", False):
 
@@ -188,7 +214,7 @@ def webhook():
                 continue
 
             # =================================================
-            # REGISTERED → FORWARD
+            # REGISTERED → FORWARD TO WORKER (UNCHANGED)
             # =================================================
             requests.post(cloud_url, json={
                 "request_id": request_id,
@@ -210,6 +236,6 @@ def register_page():
 
 # =========================================================
 # RUN
-# =========================================================
+# ========================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
