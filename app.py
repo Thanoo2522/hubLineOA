@@ -4,10 +4,7 @@ import os
 import json
 import traceback
 import requests
-import uuid
 import time
-
-from datetime import datetime, timezone
 
 import firebase_admin
 
@@ -30,10 +27,6 @@ HUB_FIREBASE_KEY = os.environ.get(
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
     "LINE_CHANNEL_ACCESS_TOKEN"
-)
-
-REGISTER_URL = os.environ.get(
-    "REGISTER_URL"
 )
 
 LIFF_ID = os.environ.get(
@@ -63,15 +56,13 @@ def home():
     return "HUB RUNNING"
 
 # =========================================================
-# CHECK ONLINE
+# CHECK WORKER ONLINE
 # =========================================================
 def is_worker_online(data):
 
     try:
 
-        status = data.get("status")
-
-        if status != "online":
+        if data.get("status") != "online":
             return False
 
         cpu = float(data.get("cpu", 999))
@@ -94,15 +85,15 @@ def is_worker_online(data):
 
         diff = now - int(last_heartbeat)
 
+        print("HEARTBEAT DIFF =", diff)
+
         if diff > 300:
             return False
 
         return True
 
     except Exception:
-
         traceback.print_exc()
-
         return False
 
 # =========================================================
@@ -111,7 +102,8 @@ def is_worker_online(data):
 def get_best_worker():
 
     docs = (
-        hub_db.collection("hub_system")
+        hub_db
+        .collection("hub_system")
         .document("server_pool")
         .collection("servers")
         .stream()
@@ -126,7 +118,7 @@ def get_best_worker():
         data = doc.to_dict()
 
         print("=" * 50)
-        print("CHECK:", doc.id)
+        print("CHECK WORKER:", doc.id)
         print(data)
 
         if not is_worker_online(data):
@@ -140,7 +132,6 @@ def get_best_worker():
         )
 
         if not cloud_url:
-
             continue
 
         load_score = float(
@@ -153,9 +144,11 @@ def get_best_worker():
 
             selected = {
 
-                "server_id": doc.id,
+                "server_id":
+                    doc.id,
 
-                "cloud_url": cloud_url
+                "cloud_url":
+                    cloud_url
             }
 
     print("SELECTED =", selected)
@@ -163,11 +156,11 @@ def get_best_worker():
     return selected
 
 # =========================================================
-# SEND LINE MESSAGE
+# REPLY REGISTER MESSAGE
 # =========================================================
 def reply_register_message(
     reply_token,
-    register_link
+    register_url
 ):
 
     url = (
@@ -185,17 +178,19 @@ def reply_register_message(
 
     payload = {
 
-        "replyToken": reply_token,
+        "replyToken":
+            reply_token,
 
         "messages": [
 
             {
-                "type": "text",
+                "type":
+                    "text",
 
                 "text":
                     (
                         "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
-                        f"{register_link}"
+                        f"{register_url}"
                     )
             }
         ]
@@ -215,9 +210,6 @@ def reply_register_message(
     print(r.status_code)
     print(r.text)
 
-# =========================================================
-# WEBHOOK
-# =========================================================
 # =========================================================
 # WEBHOOK
 # =========================================================
@@ -245,9 +237,6 @@ def webhook():
             []
         )
 
-        # =============================================
-        # GET BEST WORKER
-        # =============================================
         worker = get_best_worker()
 
         if not worker:
@@ -265,9 +254,6 @@ def webhook():
             "cloud_url"
         ]
 
-        # =============================================
-        # LOOP EVENTS
-        # =============================================
         for event in events:
 
             reply_token = event.get(
@@ -307,10 +293,6 @@ def webhook():
                 timeout=10
             )
 
-            print("CHECK REGISTER:")
-            print(r.status_code)
-            print(r.text)
-
             result = r.json()
 
             registered = result.get(
@@ -318,20 +300,17 @@ def webhook():
                 False
             )
 
+            print("REGISTER =", registered)
+
             # =========================================
-            # USER NOT REGISTER
+            # NOT REGISTER
             # =========================================
             if not registered:
 
-                # LIFF REGISTER URL
                 register_url = (
                     f"https://liff.line.me/{LIFF_ID}"
                     f"?worker={worker['server_id']}"
- 
                 )
-
-                print("REGISTER URL:")
-                print(register_url)
 
                 reply_register_message(
 
@@ -343,30 +322,26 @@ def webhook():
                 continue
 
             # =========================================
-            # FORWARD TO WORKER
+            # FORWARD
             # =========================================
             worker_url = (
                 cloud_url +
                 "/worker-webhook"
             )
 
-            forward_payload = {
-
-                "events": [
-                    event
-                ]
-            }
-
             rr = requests.post(
 
                 worker_url,
 
-                json=forward_payload,
+                json={
+
+                    "events":
+                        [event]
+                },
 
                 timeout=20
             )
 
-            print("FORWARD:")
             print(rr.status_code)
             print(rr.text)
 
@@ -388,25 +363,6 @@ def webhook():
             "message":
                 str(e)
         }), 500
-
-# =========================================================
-# REGISTER PAGE
-# =========================================================
-@app.route("/register-page")
-def register_page():
-
-    worker = request.args.get(
-        "worker"
-    )
-
-    return render_template(
-
-        "register.html",
-
-        worker=worker,
-
-        liff_id=LIFF_ID
-    )
 
 # =========================================================
 # RUN
