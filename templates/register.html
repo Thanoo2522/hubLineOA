@@ -1,104 +1,173 @@
 <!DOCTYPE html>
 <html>
 <head>
+
   <meta charset="UTF-8">
-  <title>สมัครสมาชิก</title>
+
+  <title>Register</title>
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
   <style>
-    body {
+
+    body{
       font-family: Arial;
       max-width: 400px;
       margin: auto;
       padding: 20px;
     }
 
-    input {
+    input{
       width: 100%;
       padding: 10px;
-      margin: 6px 0;
+      margin-top: 10px;
     }
 
-    button {
+    button{
       width: 100%;
       padding: 12px;
-      background: #06c755;
-      color: white;
-      border: none;
+      margin-top: 20px;
     }
+
   </style>
+
 </head>
 
 <body>
 
-<h2>สมัครสมาชิก</h2>
+<h2>ลงทะเบียน</h2>
 
-<input id="name" placeholder="ชื่อ">
-<input id="home" placeholder="หมู่บ้าน">
-<input id="address" placeholder="ที่อยู่">
-<input id="phone" placeholder="เบอร์โทร">
+<input
+  type="text"
+  id="name"
+  placeholder="ชื่อ"
+/>
 
-<button onclick="register()">สมัคร</button>
+<input
+  type="text"
+  id="phone"
+  placeholder="เบอร์โทร"
+/>
+
+<input
+  type="email"
+  id="email"
+  placeholder="Email"
+/>
+
+<button onclick="saveRegister()">
+  บันทึกข้อมูล
+</button>
 
 <script>
 
-const HUB_URL = "https://hublineoa-369387278497.asia-southeast3.run.app"
+const workerId = "{{ worker }}"
 
-let WORKER_ID = ""
-let REGISTER_URL = ""
+const liffId = "{{ liff_id }}"
 
-async function init() {
+async function initLIFF(){
 
-  await liff.init({ liffId: "2010064672-zx1EQTMH" })
+    await liff.init({
 
-  if (!liff.isLoggedIn()) {
-    liff.login()
-    return
-  }
+        liffId: liffId
+    })
 
-  const params = new URLSearchParams(window.location.search)
-  WORKER_ID = params.get("worker")
+    if(!liff.isLoggedIn()){
 
-  const res = await fetch(`${HUB_URL}/get-worker-url/${WORKER_ID}`)
-  const json = await res.json()
+        liff.login()
 
-  REGISTER_URL = json.register_url
+        return
+    }
 }
 
-async function register() {
+initLIFF()
 
-  const profile = await liff.getProfile()
+async function saveRegister(){
 
-  const data = {
-    userId: profile.userId,
-    displayName: profile.displayName,
-    pictureUrl: profile.pictureUrl,
-    workerId: WORKER_ID,
+    try{
 
-    name: document.getElementById("name").value,
-    home: document.getElementById("home").value,
-    address: document.getElementById("address").value,
-    phone: document.getElementById("phone").value
-  }
+        const profile =
+            await liff.getProfile()
 
-  const res = await fetch(REGISTER_URL, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(data)
-  })
+        const userId =
+            profile.userId
 
-  const json = await res.json()
+        const name =
+            document.getElementById(
+                "name"
+            ).value
 
-  if (json.status === "ok") {
-    alert("สมัครสำเร็จ")
-    liff.closeWindow()
-  } else {
-    alert("ไม่สำเร็จ")
-  }
+        const phone =
+            document.getElementById(
+                "phone"
+            ).value
+
+        const email =
+            document.getElementById(
+                "email"
+            ).value
+
+        // =====================================
+        // GET WORKER URL
+        // =====================================
+        const workerDoc =
+            await fetch(
+
+                "/get-worker-url/" +
+                workerId
+            )
+
+        const workerResult =
+            await workerDoc.json()
+
+        const workerRegisterUrl =
+            workerResult.register_url
+
+        // =====================================
+        // SAVE
+        // =====================================
+        const response =
+            await fetch(
+
+                workerRegisterUrl +
+                "/save-register",
+
+                {
+                    method: "POST",
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        user_id: userId,
+
+                        name: name,
+
+                        phone: phone,
+
+                        email: email
+                    })
+                }
+            )
+
+        const result =
+            await response.json()
+
+        alert("ลงทะเบียนสำเร็จ")
+
+        liff.closeWindow()
+
+    }catch(e){
+
+        console.error(e)
+
+        alert("เกิดข้อผิดพลาด")
+    }
 }
-
-init()
 
 </script>
 

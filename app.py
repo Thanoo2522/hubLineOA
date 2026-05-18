@@ -7,8 +7,14 @@ import requests
 import uuid
 import time
 
+from datetime import datetime, timezone
+
 import firebase_admin
-from firebase_admin import credentials, firestore
+
+from firebase_admin import (
+    credentials,
+    firestore
+)
 
 # =========================================================
 # FLASK
@@ -18,28 +24,34 @@ app = Flask(__name__)
 # =========================================================
 # ENV
 # =========================================================
-HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
-REGISTER_URL = os.environ.get("REGISTER_URL")
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-LIFF_ID = os.environ.get("LIFF_ID")
+HUB_FIREBASE_KEY = os.environ.get(
+    "HUB_FIREBASE_KEY"
+)
 
-if not HUB_FIREBASE_KEY:
-    raise RuntimeError("Missing HUB_FIREBASE_KEY")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
+    "LINE_CHANNEL_ACCESS_TOKEN"
+)
 
-if not REGISTER_URL:
-    raise RuntimeError("Missing REGISTER_URL")
+REGISTER_URL = os.environ.get(
+    "REGISTER_URL"
+)
 
-if not LINE_CHANNEL_ACCESS_TOKEN:
-    raise RuntimeError("Missing LINE_CHANNEL_ACCESS_TOKEN")
-
-if not LIFF_ID:
-    raise RuntimeError("Missing LIFF_ID")
+LIFF_ID = os.environ.get(
+    "LIFF_ID"
+)
 
 # =========================================================
 # FIREBASE
 # =========================================================
-hub_cred = credentials.Certificate(json.loads(HUB_FIREBASE_KEY))
-hub_app = firebase_admin.initialize_app(hub_cred, name="hub")
+hub_cred = credentials.Certificate(
+    json.loads(HUB_FIREBASE_KEY)
+)
+
+hub_app = firebase_admin.initialize_app(
+    hub_cred,
+    name="hub"
+)
+
 hub_db = firestore.client(hub_app)
 
 # =========================================================
@@ -47,195 +59,368 @@ hub_db = firestore.client(hub_app)
 # =========================================================
 @app.route("/")
 def home():
+
     return "HUB RUNNING"
 
 # =========================================================
-# WORKER ONLINE CHECK (UNCHANGED)
+# CHECK ONLINE
 # =========================================================
 def is_worker_online(data):
+
     try:
-        if data.get("status") != "online":
+
+        status = data.get("status")
+
+        if status != "online":
             return False
 
-        last_heartbeat = data.get("last_heartbeat")
+        cpu = float(data.get("cpu", 999))
+        ram = float(data.get("ram", 999))
+
+        if cpu > 85:
+            return False
+
+        if ram > 85:
+            return False
+
+        last_heartbeat = data.get(
+            "last_heartbeat"
+        )
+
         if not last_heartbeat:
             return False
 
         now = int(time.time())
+
         diff = now - int(last_heartbeat)
 
-        return abs(diff) <= 300
+        if diff > 300:
+            return False
 
-    except:
+        return True
+
+    except Exception:
+
         traceback.print_exc()
+
         return False
 
 # =========================================================
-# GET BEST WORKER (UNCHANGED)
+# GET BEST WORKER
 # =========================================================
 def get_best_worker():
 
-    docs = hub_db.collection("hub_system") \
-        .document("server_pool") \
-        .collection("servers") \
+    docs = (
+        hub_db.collection("hub_system")
+        .document("server_pool")
+        .collection("servers")
         .stream()
+    )
 
     selected = None
+
     lowest_load = 999999
 
     for doc in docs:
 
         data = doc.to_dict()
 
+        print("=" * 50)
+        print("CHECK:", doc.id)
+        print(data)
+
         if not is_worker_online(data):
+
+            print("SKIP OFFLINE")
+
             continue
 
-        cloud_url = data.get("cloud_url")
+        cloud_url = data.get(
+            "cloud_url"
+        )
+
         if not cloud_url:
+
             continue
 
-        load_score = data.get("load_score", 0)
+        load_score = float(
+            data.get("load_score", 999999)
+        )
 
         if load_score < lowest_load:
+
             lowest_load = load_score
 
             selected = {
+
                 "server_id": doc.id,
+
                 "cloud_url": cloud_url
             }
+
+    print("SELECTED =", selected)
 
     return selected
 
 # =========================================================
-# 🔥 FIX: LINE BUTTON (CLICKABLE REGISTER LINK)
+# SEND LINE MESSAGE
 # =========================================================
-def reply_register_message(reply_token, register_link):
+def reply_register_message(
+    reply_token,
+    register_link
+):
 
-    url = "https://api.line.me/v2/bot/message/reply"
+    url = (
+        "https://api.line.me/v2/bot/message/reply"
+    )
 
     headers = {
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+
+        "Authorization":
+            f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+
+        "Content-Type":
+            "application/json"
     }
 
     payload = {
+
         "replyToken": reply_token,
+
         "messages": [
+
             {
-                "type": "flex",
-                "altText": "กรุณาลงทะเบียน",
-                "contents": {
-                    "type": "bubble",
-                    "body": {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": "กรุณาลงทะเบียนก่อนใช้งาน",
-                                "weight": "bold",
-                                "size": "md"
-                            }
-                        ]
-                    },
-                    "footer": {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {
-                                "type": "button",
-                                "style": "primary",
-                                "action": {
-                                    "type": "uri",
-                                    "label": "สมัครสมาชิก",
-                                    "uri": register_link
-                                }
-                            }
-                        ]
-                    }
-                }
+                "type": "text",
+
+                "text":
+                    (
+                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
+                        f"{register_link}"
+                    )
             }
         ]
     }
 
-    try:
-        res = requests.post(url, headers=headers, json=payload)
-        print("LINE STATUS:", res.status_code)
-        print("LINE RESPONSE:", res.text)
-    except Exception as e:
-        print("LINE ERROR:", str(e))
+    r = requests.post(
+
+        url,
+
+        headers=headers,
+
+        json=payload,
+
+        timeout=10
+    )
+
+    print(r.status_code)
+    print(r.text)
 
 # =========================================================
-# WEBHOOK (UNCHANGED LOGIC)
+# WEBHOOK
 # =========================================================
-@app.route("/webhook", methods=["POST"])
+# =========================================================
+# WEBHOOK
+# =========================================================
+@app.route(
+    "/webhook",
+    methods=["POST"]
+)
 def webhook():
 
     try:
-        body = request.get_json()
-        request_id = str(uuid.uuid4())
 
+        body = request.get_json()
+
+        print("=" * 50)
+        print("HUB WEBHOOK")
+        print(json.dumps(
+            body,
+            indent=2,
+            ensure_ascii=False
+        ))
+        print("=" * 50)
+
+        events = body.get(
+            "events",
+            []
+        )
+
+        # =============================================
+        # GET BEST WORKER
+        # =============================================
         worker = get_best_worker()
 
         if not worker:
-            return jsonify({"status": "error", "message": "no worker"})
 
-        cloud_url = worker["cloud_url"]
+            return jsonify({
 
-        events = body.get("events", [])
+                "status":
+                    "error",
 
+                "message":
+                    "no worker"
+            })
+
+        cloud_url = worker[
+            "cloud_url"
+        ]
+
+        # =============================================
+        # LOOP EVENTS
+        # =============================================
         for event in events:
 
-            reply_token = event.get("replyToken")
-            user_id = event.get("source", {}).get("userId")
+            reply_token = event.get(
+                "replyToken"
+            )
+
+            source = event.get(
+                "source",
+                {}
+            )
+
+            user_id = source.get(
+                "userId"
+            )
 
             if not user_id:
                 continue
 
-            # =================================================
-            # CHECK REGISTER (UNCHANGED)
-            # =================================================
-            check_url = cloud_url + "/check-register"
+            # =========================================
+            # CHECK REGISTER
+            # =========================================
+            check_url = (
+                cloud_url +
+                "/check-register"
+            )
 
-            res = requests.post(check_url, json={"user_id": user_id})
-            result = res.json()
+            r = requests.post(
 
-            # =================================================
-            # NOT REGISTERED → SHOW BUTTON LINK (FIX HERE)
-            # =================================================
-            if not result.get("registered", False):
+                check_url,
 
-                register_link = (
+                json={
+
+                    "user_id":
+                        user_id
+                },
+
+                timeout=10
+            )
+
+            print("CHECK REGISTER:")
+            print(r.status_code)
+            print(r.text)
+
+            result = r.json()
+
+            registered = result.get(
+                "registered",
+                False
+            )
+
+            # =========================================
+            # USER NOT REGISTER
+            # =========================================
+            if not registered:
+
+                # LIFF REGISTER URL
+                register_url = (
                     f"https://liff.line.me/{LIFF_ID}"
                     f"?worker={worker['server_id']}"
+ 
                 )
 
-                reply_register_message(reply_token, register_link)
+                print("REGISTER URL:")
+                print(register_url)
+
+                reply_register_message(
+
+                    reply_token,
+
+                    register_url
+                )
+
                 continue
 
-            # =================================================
-            # REGISTERED → FORWARD TO WORKER (UNCHANGED)
-            # =================================================
-            requests.post(cloud_url, json={
-                "request_id": request_id,
-                "payload": body
-            })
+            # =========================================
+            # FORWARD TO WORKER
+            # =========================================
+            worker_url = (
+                cloud_url +
+                "/worker-webhook"
+            )
 
-        return jsonify({"status": "success"})
+            forward_payload = {
+
+                "events": [
+                    event
+                ]
+            }
+
+            rr = requests.post(
+
+                worker_url,
+
+                json=forward_payload,
+
+                timeout=20
+            )
+
+            print("FORWARD:")
+            print(rr.status_code)
+            print(rr.text)
+
+        return jsonify({
+
+            "status":
+                "success"
+        })
 
     except Exception as e:
+
         traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)})
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(e)
+        }), 500
 
 # =========================================================
 # REGISTER PAGE
 # =========================================================
 @app.route("/register-page")
 def register_page():
-    return render_template("register.html")
+
+    worker = request.args.get(
+        "worker"
+    )
+
+    return render_template(
+
+        "register.html",
+
+        worker=worker,
+
+        liff_id=LIFF_ID
+    )
 
 # =========================================================
 # RUN
-# ========================================================
+# =========================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+
+    app.run(
+
+        host="0.0.0.0",
+
+        port=int(
+            os.environ.get(
+                "PORT",
+                8080
+            )
+        )
+    )
