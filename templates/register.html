@@ -1,174 +1,131 @@
 <!DOCTYPE html>
-<html>
+<html lang="th">
 <head>
-
   <meta charset="UTF-8">
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Register</title>
-
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-
+  <script src="https://line-scdn.net"></script>
   <style>
-
-    body{
-      font-family: Arial;
+    body {
+      font-family: Arial, sans-serif;
       max-width: 400px;
       margin: auto;
       padding: 20px;
     }
-
-    input{
+    input {
       width: 100%;
       padding: 10px;
       margin-top: 10px;
+      box-sizing: border-box;
     }
-
-    button{
+    button {
       width: 100%;
       padding: 12px;
       margin-top: 20px;
+      cursor: pointer;
     }
-
   </style>
-
 </head>
-
 <body>
 
 <h2>ลงทะเบียน</h2>
 
-<input
-  type="text"
-  id="name"
-  placeholder="ชื่อ"
-/>
+<input type="text" id="name" placeholder="ชื่อ" />
+<input type="text" id="phone" placeholder="เบอร์โทร" />
+<input type="email" id="email" placeholder="Email" />
 
-<input
-  type="text"
-  id="phone"
-  placeholder="เบอร์โทร"
-/>
-
-<input
-  type="email"
-  id="email"
-  placeholder="Email"
-/>
-
-<button onclick="saveRegister()">
-  บันทึกข้อมูล
-</button>
+<button onclick="saveRegister()">บันทึกข้อมูล</button>
 
 <script>
+// ดึงพารามิเตอร์ส่งต่อลอจิก ?worker= จาก URL โหมดเปิดตรงผ่านเว็บเบราว์เซอร์
+const urlParams = new URLSearchParams(window.location.search);
+const workerId = urlParams.get('worker') || "worker1"; 
 
-const workerId = "{{ worker }}"
+// ดึง liffId จาก URL (หากผูกค่าพารามิเตอร์ตอนตั้งค่า) หรือสลับใช้ Config ตรงๆ
+const liffId = urlParams.get('liff_id') || "ใส่_LIFF_ID_จริงของคุณตรงนี้"; 
 
-const liffId = "{{ liff_id }}"
-
-async function initLIFF(){
-
-    await liff.init({
-
-        liffId: liffId
-    })
-
-    if(!liff.isLoggedIn()){
-
-        liff.login()
-
-        return
+async function initLIFF() {
+    try {
+        await liff.init({ liffId: liffId });
+        if (!liff.isLoggedIn()) {
+            liff.login();
+            return;
+        }
+    } catch (err) {
+        console.error("LIFF Initialization failed", err);
     }
 }
 
-initLIFF()
+// สั่งเริ่มการทำงานระบบ LIFF
+initLIFF();
 
-async function saveRegister(){
+async function saveRegister() {
+    try {
+        let userId = "test_user_id"; // กรณีทดสอบนอกแอป LINE
+        
+        if (liff.isLoggedIn()) {
+            const profile = await liff.getProfile();
+            userId = profile.userId;
+        }
 
-    try{
+        const name = document.getElementById("name").value;
+        const phone = document.getElementById("phone").value;
+        const email = document.getElementById("email").value;
 
-        const profile =
-            await liff.getProfile()
-
-        const userId =
-            profile.userId
-
-        const name =
-            document.getElementById(
-                "name"
-            ).value
-
-        const phone =
-            document.getElementById(
-                "phone"
-            ).value
-
-        const email =
-            document.getElementById(
-                "email"
-            ).value
+        if (!name || !phone || !email) {
+            alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+            return;
+        }
 
         // =====================================
         // GET WORKER URL
         // =====================================
-        const workerDoc =
-            await fetch(
+        const workerDoc = await fetch("/get-worker-url/" + workerId);
+        if (!workerDoc.ok) {
+            const errorResult = await workerDoc.json();
+            throw new Error(errorResult.message || "ไม่พบที่อยู่เครื่องเซิร์ฟเวอร์ย่อย");
+        }
 
-                "/get-worker-url/" +
-                workerId
-            )
+        const workerResult = await workerDoc.json();
+        let workerRegisterUrl = workerResult.register_url;
 
-        const workerResult =
-            await workerDoc.json()
-
-        const workerRegisterUrl = "https://gitbackend-416424538655.asia-southeast3.run.app"
-           // workerResult.register_url
+        // จัดการลบเครื่องหมาย / ท้าย URL (ป้องกันโครงสร้าง URL ซ้อนพัง)
+        if (workerRegisterUrl.endsWith('/')) {
+            workerRegisterUrl = workerRegisterUrl.slice(0, -1);
+        }
 
         // =====================================
-        // SAVE
+        // SAVE TO WORKER (ตรวจสอบ CORS ปลายทางด้วย)
         // =====================================
-        const response =
-            await fetch(
+        const response = await fetch(workerRegisterUrl + "/register-user", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                name: name,
+                phone: phone,
+                email: email
+            })
+        });
 
-                workerRegisterUrl +
-                "/register-user",
+        if (!response.ok) {
+            throw new Error(`ส่งข้อมูลลงทะเบียนไม่สำเร็จ สถานะเซิร์ฟเวอร์: ${response.status}`);
+        }
 
-                {
-                    method: "POST",
+        const result = await response.json();
+        alert("ลงทะเบียนสำเร็จ");
+        
+        if (liff.isInClient()) {
+            liff.closeWindow();
+        }
 
-                    headers: {
-
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-
-                        user_id: userId,
-
-                        name: name,
-
-                        phone: phone,
-
-                        email: email
-                    })
-                }
-            )
-
-        const result =
-            await response.json()
-
-        alert("ลงทะเบียนสำเร็จ")
-
-        liff.closeWindow()
-
-    }catch(e){
-
-        console.error(e)
-
-        alert("เกิดข้อผิดพลาด")
+    } catch (e) {
+        console.error(e);
+        alert("เกิดข้อผิดพลาด: " + e.message);
     }
 }
-
 </script>
 
 </body>

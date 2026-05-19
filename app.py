@@ -1,17 +1,11 @@
 from flask import Flask, request, jsonify, render_template
-
 import os
 import json
 import traceback
 import requests
 import time
-
 import firebase_admin
-
-from firebase_admin import (
-    credentials,
-    firestore
-)
+from firebase_admin import credentials, firestore
 
 # =========================================================
 # FLASK
@@ -21,77 +15,56 @@ app = Flask(__name__)
 # =========================================================
 # ENV
 # =========================================================
-HUB_FIREBASE_KEY = os.environ.get(
-    "HUB_FIREBASE_KEY"
-)
-
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
-    "LINE_CHANNEL_ACCESS_TOKEN"
-)
-
-LIFF_ID = os.environ.get(
-    "LIFF_ID"
-)
+HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+LIFF_ID = os.environ.get("LIFF_ID")
 
 # =========================================================
 # FIREBASE
 # =========================================================
-hub_cred = credentials.Certificate(
-    json.loads(HUB_FIREBASE_KEY)
-)
-
-hub_app = firebase_admin.initialize_app(
-    hub_cred,
-    name="hub"
-)
-
+hub_cred = credentials.Certificate(json.loads(HUB_FIREBASE_KEY))
+hub_app = firebase_admin.initialize_app(hub_cred, name="hub")
 hub_db = firestore.client(hub_app)
 
 # =========================================================
-# HOME
+# HOME & WEB REGISTER VIEW
 # =========================================================
 @app.route("/")
 def home():
-
     return "HUB RUNNING"
+
+@app.route("/register")
+def register_page():
+    # รองรับการเรนเดอร์ในกรณีเก็บหน้าเว็บไว้ในโฟลเดอร์ templates ของโปรเจกต์นี้
+    worker = request.args.get('worker', 'worker1')
+    return render_template("register.html", worker=worker, liff_id=LIFF_ID)
 
 # =========================================================
 # CHECK WORKER ONLINE
 # =========================================================
 def is_worker_online(data):
-
     try:
-
         if data.get("status") != "online":
             return False
 
         cpu = float(data.get("cpu", 999))
         ram = float(data.get("ram", 999))
 
-        if cpu > 85:
+        if cpu > 85 or ram > 85:
             return False
 
-        if ram > 85:
-            return False
-
-        last_heartbeat = data.get(
-            "last_heartbeat"
-        )
-
+        last_heartbeat = data.get("last_heartbeat")
         if not last_heartbeat:
             return False
 
         now = int(time.time())
-
         diff = now - int(last_heartbeat)
-
         print("HEARTBEAT DIFF =", diff)
 
         if diff > 300:
             return False
 
         return True
-
     except Exception:
         traceback.print_exc()
         return False
@@ -100,7 +73,6 @@ def is_worker_online(data):
 # GET BEST WORKER
 # =========================================================
 def get_best_worker():
-
     docs = (
         hub_db
         .collection("hub_system")
@@ -110,126 +82,65 @@ def get_best_worker():
     )
 
     selected = None
-
     lowest_load = 999999
 
     for doc in docs:
-
         data = doc.to_dict()
-
         print("=" * 50)
         print("CHECK WORKER:", doc.id)
         print(data)
 
         if not is_worker_online(data):
-
             print("SKIP OFFLINE")
-
             continue
 
-        cloud_url = data.get(
-            "cloud_url"
-        )
-
+        cloud_url = data.get("cloud_url")
         if not cloud_url:
             continue
 
-        load_score = float(
-            data.get("load_score", 999999)
-        )
-
+        load_score = float(data.get("load_score", 999999))
         if load_score < lowest_load:
-
             lowest_load = load_score
-
             selected = {
-
-                "server_id":
-                    doc.id,
-
-                "cloud_url":
-                    cloud_url
+                "server_id": doc.id,
+                "cloud_url": cloud_url
             }
 
     print("SELECTED =", selected)
-
     return selected
 
 # =========================================================
 # REPLY REGISTER MESSAGE
 # =========================================================
-def reply_register_message(
-    reply_token,
-    register_url
-):
-
-    url = (
-        "https://api.line.me/v2/bot/message/reply"
-    )
-
+def reply_register_message(reply_token, register_url):
+    url = "https://api.line.me/v2/bot/message/reply"
     headers = {
-
-        "Authorization":
-            f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-
-        "Content-Type":
-            "application/json"
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
     }
-
     payload = {
-
-        "replyToken":
-            reply_token,
-
+        "replyToken": reply_token,
         "messages": [
-
             {
-                "type":
-                    "text",
-
-                "text":
-                    (
-                        "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
-                        f"{register_url}"
-                    )
+                "type": "text",
+                "text": f"กรุณาลงทะเบียนก่อนใช้งาน\n\n{register_url}"
             }
         ]
     }
+    r = requests.post(url, headers=headers, json=payload, timeout=10)
+    print(f"LINE Response: {r.status_code} - {r.text}")
 
-    r = requests.post(
-
-        url,
-
-        headers=headers,
-
-        json=payload,
-
-        timeout=10
-    )
-
-    print(r.status_code)
-    print(r.text)
-#==========================================================
 # =========================================================
 # GET WORKER URL
 # =========================================================
-@app.route(
-    "/get-worker-url/<worker_id>",
-    methods=["GET"]
-)
+@app.route("/get-worker-url/<worker_id>", methods=["GET"])
 def get_worker_url(worker_id):
-
     try:
-
         print("=" * 50)
         print("GET WORKER URL")
         print("worker_id:", worker_id)
         print("=" * 50)
 
-        # =====================================
-        # FIRESTORE PATH
-        # hub_system/server_pool/servers/{worker_id}
-        # =====================================
         doc_ref = (
             hub_db
             .collection("hub_system")
@@ -240,235 +151,91 @@ def get_worker_url(worker_id):
         )
 
         if not doc_ref.exists:
-
             return jsonify({
-
                 "status": "error",
-                "message": "worker not found"
+                "message": f"worker '{worker_id}' not found"
             }), 404
 
-        # =====================================
-        # DATA
-        # =====================================
         data = doc_ref.to_dict()
-
-        # safe log (กัน Timestamp error)
         print(json.dumps(str(data), indent=2, ensure_ascii=False))
 
-        # =====================================
-        # CLOUD URL
-        # =====================================
         cloud_url = data.get("cloud_url")
-
         if not cloud_url:
-
             return jsonify({
-
                 "status": "error",
-                "message": "cloud_url not found"
+                "message": "cloud_url not found in database"
             }), 400
 
-        # =====================================
-        # SUCCESS
-        # =====================================
         return jsonify({
-
             "status": "success",
             "register_url": cloud_url
         })
 
     except Exception as e:
-
         traceback.print_exc()
-
         return jsonify({
-
             "status": "error",
             "message": str(e)
         }), 500
+
 # =========================================================
 # WEBHOOK
 # =========================================================
-@app.route(
-    "/webhook",
-    methods=["POST"]
-)
+@app.route("/webhook", methods=["POST"])
 def webhook():
-
     try:
-
         body = request.get_json()
-
         print("=" * 50)
         print("HUB WEBHOOK")
-        print(json.dumps(
-            body,
-            indent=2,
-            ensure_ascii=False
-        ))
+        print(json.dumps(body, indent=2, ensure_ascii=False))
         print("=" * 50)
 
-        events = body.get(
-            "events",
-            []
-        )
-
+        events = body.get("events", [])
         worker = get_best_worker()
 
         if not worker:
-
             return jsonify({
-
-                "status":
-                    "error",
-
-                "message":
-                    "no worker"
+                "status": "error",
+                "message": "no worker online"
             })
 
-        cloud_url = worker[
-            "cloud_url"
-        ]
+        cloud_url = worker["cloud_url"]
 
         for event in events:
-
-            reply_token = event.get(
-                "replyToken"
-            )
-
-            source = event.get(
-                "source",
-                {}
-            )
-
-            user_id = source.get(
-                "userId"
-            )
+            reply_token = event.get("replyToken")
+            source = event.get("source", {})
+            user_id = source.get("userId")
 
             if not user_id:
                 continue
 
             # =========================================
-            # CHECK REGISTER
+            # CHECK REGISTER VIA WORKER
             # =========================================
-            check_url = (
-                cloud_url +
-                "/check-register"
-            )
-
-            r = requests.post(
-
-                check_url,
-
-                json={
-
-                    "user_id":
-                        user_id
-                },
-
-                timeout=10
-            )
-
-            result = r.json()
-
-            registered = result.get(
-                "registered",
-                False
-            )
+            check_url = cloud_url + "/check-register"
+            try:
+                r = requests.post(check_url, json={"user_id": user_id}, timeout=10)
+                result = r.json()
+                registered = result.get("registered", False)
+            except Exception as ex:
+                print(f"Failed to check register with worker: {str(ex)}")
+                registered = False
 
             print("REGISTER =", registered)
 
             # =========================================
-            # NOT REGISTER
+            # NOT REGISTERED -> SEND LIFF URL
             # =========================================
             if not registered:
+                # ส่งพารามิเตอร์ส่งต่อข้อมูลเข้า LIFF Endpoint
+                register_url = f"https://liff.line.me/{LIFF_ID}?worker={worker['server_id']}&liff_id={LIFF_ID}"
+                reply_register_message(reply_token, register_url)
 
-                register_url = (
-                    f"https://liff.line.me/{LIFF_ID}"
-                    f"?worker={worker['server_id']}"
-                )
-
-                reply_register_message(
-
-                    reply_token,
-
-                    register_url
-                )
-
-                continue
-
-            # =========================================
-            # FORWARD
-            # =========================================
-            worker_url = (
-                cloud_url +
-                "/worker-webhook"
-            )
-
-            rr = requests.post(
-
-                worker_url,
-
-                json={
-
-                    "events":
-                        [event]
-                },
-
-                timeout=20
-            )
-
-            print(rr.status_code)
-            print(rr.text)
-
-        return jsonify({
-
-            "status":
-                "success"
-        })
+        return jsonify({"status": "success"})
 
     except Exception as e:
-
         traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-        return jsonify({
-
-            "status":
-                "error",
-
-            "message":
-                str(e)
-        }), 500
-       
- #=================================================
-@app.route("/register-page")
-def register_page():
-
-    worker = request.args.get(
-        "worker"
-    )
-
-    return render_template(
-
-        "register.html",
-
-        worker=worker,
-
-        liff_id=LIFF_ID
-    )
-# =========================================================
-# RUN
-# =========================================================
 if __name__ == "__main__":
-
-    app.run(
-
-        host="0.0.0.0",
-
-        port=int(
-            os.environ.get(
-                "PORT",
-                8080
-            )
-        )
-    )
+    app.run(debug=True, port=int(os.environ.get("PORT", 8080)))
