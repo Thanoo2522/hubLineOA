@@ -61,11 +61,12 @@ def is_worker_online(data):
         if data.get("status") != "online":
             return False
 
-        cpu = float(data.get("cpu", 999))
-        ram = float(data.get("ram", 999))
+        cpu = float(data.get("cpu", 0))
+        ram = float(data.get("ram", 0))
 
         if cpu > 85 or ram > 85:
-            return False
+           return False
+ 
 
         last_heartbeat = data.get("last_heartbeat")
         if not last_heartbeat:
