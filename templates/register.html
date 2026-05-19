@@ -18,31 +18,55 @@
   <style>
 
     body {
+
       font-family: Arial;
+
       max-width: 400px;
+
       margin: auto;
+
       padding: 20px;
     }
 
+    h2 {
+
+      text-align: center;
+    }
+
     input {
+
       width: 100%;
-      padding: 10px;
+
+      padding: 12px;
+
       margin-top: 10px;
+
       box-sizing: border-box;
     }
 
     button {
+
       width: 100%;
-      padding: 12px;
+
+      padding: 14px;
+
       margin-top: 20px;
+
       background: #06c755;
+
       color: white;
+
       border: none;
-      border-radius: 6px;
+
+      border-radius: 8px;
+
+      font-size: 16px;
+
       cursor: pointer;
     }
 
     button:disabled {
+
       background: gray;
     }
 
@@ -54,42 +78,48 @@
 
 <h2>ลงทะเบียน</h2>
 
-<input id="name" placeholder="ชื่อ">
+<input
+  id="name"
+  placeholder="ชื่อ"
+/>
 
-<input id="phone" placeholder="เบอร์โทร">
+<input
+  id="phone"
+  placeholder="เบอร์โทร"
+/>
 
-<input id="email" placeholder="Email">
+<input
+  id="email"
+  placeholder="Email"
+/>
 
-<button id="saveBtn" onclick="saveRegister()">
+<button
+  id="saveBtn"
+  onclick="saveRegister()"
+>
   บันทึกข้อมูล
 </button>
 
 <script>
 
-// =====================================================
-// CONFIG
-// =====================================================
+//
+// LIFF ID
+//
 
-const HUB_URL =
-  "https://hublineoa-369387278497.asia-southeast3.run.app";
+const liffId = "{{ liff_id }}";
 
-const workerId =
-  new URLSearchParams(window.location.search)
-    .get("worker");
+//
+// FIX WORKER URL
+//
 
-const liffId =
-  "{{ liff_id }}";
+const workerUrl =
+  "https://gitbackend-416424538655.asia-southeast3.run.app";
 
-// =====================================================
-// DEBUG
-// =====================================================
+console.log("WORKER URL =", workerUrl);
 
-console.log("WORKER ID =", workerId);
-console.log("LIFF ID =", liffId);
-
-// =====================================================
+//
 // INIT LIFF
-// =====================================================
+//
 
 async function initLIFF() {
 
@@ -98,6 +128,7 @@ async function initLIFF() {
         console.log("INIT LIFF");
 
         await liff.init({
+
             liffId: liffId
         });
 
@@ -112,7 +143,7 @@ async function initLIFF() {
 
     } catch (err) {
 
-        console.error("LIFF INIT ERROR:", err);
+        console.error("LIFF ERROR:", err);
 
         alert("LIFF INIT ERROR");
     }
@@ -120,9 +151,9 @@ async function initLIFF() {
 
 initLIFF();
 
-// =====================================================
+//
 // REGISTER
-// =====================================================
+//
 
 async function saveRegister() {
 
@@ -133,18 +164,24 @@ async function saveRegister() {
 
         btn.disabled = true;
 
-        // ==============================
+        //
         // VALIDATE
-        // ==============================
+        //
 
         const name =
-          document.getElementById("name").value.trim();
+          document.getElementById("name")
+          .value
+          .trim();
 
         const phone =
-          document.getElementById("phone").value.trim();
+          document.getElementById("phone")
+          .value
+          .trim();
 
         const email =
-          document.getElementById("email").value.trim();
+          document.getElementById("email")
+          .value
+          .trim();
 
         if (!name || !phone || !email) {
 
@@ -155,18 +192,9 @@ async function saveRegister() {
             return;
         }
 
-        if (!workerId) {
-
-            alert("ไม่พบ worker id");
-
-            btn.disabled = false;
-
-            return;
-        }
-
-        // ==============================
+        //
         // GET LINE PROFILE
-        // ==============================
+        //
 
         let userId = "unknown";
 
@@ -175,48 +203,24 @@ async function saveRegister() {
             const profile =
               await liff.getProfile();
 
-            console.log("PROFILE:", profile);
+            console.log("PROFILE =", profile);
 
             userId = profile.userId;
         }
 
-        // ==============================
-        // GET WORKER URL
-        // ==============================
+        console.log("USER ID =", userId);
 
-        console.log("GET WORKER URL");
-
-        const workerRes =
-          await fetch(
-            `${HUB_URL}/get-worker-url/${workerId}`
-          );
-
-        const workerData =
-          await workerRes.json();
-
-        console.log("WORKER DATA:", workerData);
-
-        if (!workerData.cloud_url) {
-
-            throw new Error(
-              "worker url not found"
-            );
-        }
-
-        // remove last /
-        const workerUrl =
-          workerData.cloud_url.replace(/\/$/, "");
-
-        console.log("WORKER URL =", workerUrl);
-
-        // ==============================
+        //
         // SEND REGISTER
-        // ==============================
+        //
+
+        console.log("SEND REGISTER");
 
         const registerRes =
           await fetch(
             workerUrl + "/register-user",
             {
+
                 method: "POST",
 
                 headers: {
@@ -236,22 +240,32 @@ async function saveRegister() {
             }
           );
 
+        console.log(
+          "REGISTER STATUS =",
+          registerRes.status
+        );
+
         const registerJson =
           await registerRes.json();
 
-        console.log("REGISTER RESULT:", registerJson);
+        console.log(
+          "REGISTER RESULT =",
+          registerJson
+        );
 
         if (!registerRes.ok) {
 
             throw new Error(
+
               registerJson.message ||
+
               "register failed"
             );
         }
 
-        // ==============================
+        //
         // SUCCESS
-        // ==============================
+        //
 
         alert("ลงทะเบียนสำเร็จ");
 
@@ -262,13 +276,19 @@ async function saveRegister() {
 
     } catch (err) {
 
-        console.error("REGISTER ERROR:", err);
+        console.error(
+          "REGISTER ERROR:",
+          err
+        );
 
-        alert("ERROR: " + err.message);
+        alert(
+          "ERROR: " + err.message
+        );
 
     } finally {
 
-        document.getElementById("saveBtn")
+        document
+          .getElementById("saveBtn")
           .disabled = false;
     }
 }
