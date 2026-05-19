@@ -67,25 +67,16 @@ const liffId = "{{ liff_id }}"
 
 async function initLIFF(){
 
-    try{
+    await liff.init({
 
-        await liff.init({
+        liffId: liffId
+    })
 
-            liffId: liffId
-        })
+    if(!liff.isLoggedIn()){
 
-        if(!liff.isLoggedIn()){
+        liff.login()
 
-            liff.login()
-
-            return
-        }
-
-    }catch(e){
-
-        console.error(e)
-
-        alert("LIFF INIT ERROR")
+        return
     }
 }
 
@@ -95,25 +86,13 @@ async function saveRegister(){
 
     try{
 
-        // =====================================
-        // GET PROFILE
-        // =====================================
         const profile =
             await liff.getProfile()
 
         const userId =
             profile.userId
 
-        const displayName =
-            profile.displayName
-
-        const pictureUrl =
-            profile.pictureUrl
-
-        // =====================================
-        // FORM
-        // =====================================
-        const fullname =
+        const name =
             document.getElementById(
                 "name"
             ).value
@@ -129,23 +108,6 @@ async function saveRegister(){
             ).value
 
         // =====================================
-        // VALIDATE
-        // =====================================
-        if(!fullname){
-
-            alert("กรุณากรอกชื่อ")
-
-            return
-        }
-
-        if(!phone){
-
-            alert("กรุณากรอกเบอร์โทร")
-
-            return
-        }
-
-        // =====================================
         // GET WORKER URL
         // =====================================
         const workerDoc =
@@ -158,19 +120,17 @@ async function saveRegister(){
         const workerResult =
             await workerDoc.json()
 
-        console.log(workerResult)
-
         const workerRegisterUrl =
-            workerResult.cloud_url
+            workerResult.register_url
 
         // =====================================
-        // SAVE REGISTER
+        // SAVE
         // =====================================
         const response =
             await fetch(
 
                 workerRegisterUrl +
-                "/register-user",
+                "/save-register",
 
                 {
                     method: "POST",
@@ -183,43 +143,19 @@ async function saveRegister(){
 
                     body: JSON.stringify({
 
-                        userId:
-                            userId,
+                        user_id: userId,
 
-                        displayName:
-                            displayName,
+                        name: name,
 
-                        pictureUrl:
-                            pictureUrl,
+                        phone: phone,
 
-                        fullname:
-                            fullname,
-
-                        phone:
-                            phone,
-
-                        email:
-                            email,
-
-                        worker:
-                            workerId
+                        email: email
                     })
                 }
             )
 
         const result =
             await response.json()
-
-        console.log(result)
-
-        if(result.status != "success"){
-
-            alert(
-                "สมัครไม่สำเร็จ"
-            )
-
-            return
-        }
 
         alert("ลงทะเบียนสำเร็จ")
 
@@ -229,10 +165,7 @@ async function saveRegister(){
 
         console.error(e)
 
-        alert(
-            "เกิดข้อผิดพลาด:\n" +
-            e
-        )
+        alert("เกิดข้อผิดพลาด")
     }
 }
 
