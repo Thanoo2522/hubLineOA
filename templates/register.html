@@ -217,9 +217,8 @@ async function saveRegister() {
         console.log("SEND REGISTER");
 
         const registerRes =
-          await fetch(
-            workerUrl + "/register-user",
-            {
+          await fetch( `${workerUrl}/register-user`,
+              {
 
                 method: "POST",
 
