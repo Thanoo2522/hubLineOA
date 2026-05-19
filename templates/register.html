@@ -155,142 +155,143 @@ initLIFF();
 // REGISTER
 //
 
-async function saveRegister() {
+ async function saveRegister() {
 
-    try {
+  try {
 
-        const btn =
-          document.getElementById("saveBtn");
+    console.log("START REGISTER")
 
-        btn.disabled = true;
+    const btn =
+      document.getElementById("saveBtn")
 
-        //
-        // VALIDATE
-        //
+    btn.disabled = true
 
-        const name =
-          document.getElementById("name")
-          .value
-          .trim();
+    // =========================
+    // VALIDATE
+    // =========================
 
-        const phone =
-          document.getElementById("phone")
-          .value
-          .trim();
+    const name =
+      document.getElementById("name")
+      .value
+      .trim()
 
-        const email =
-          document.getElementById("email")
-          .value
-          .trim();
+    const phone =
+      document.getElementById("phone")
+      .value
+      .trim()
 
-        if (!name || !phone || !email) {
+    const email =
+      document.getElementById("email")
+      .value
+      .trim()
 
-            alert("กรอกข้อมูลให้ครบ");
+    if (!name || !phone || !email) {
 
-            btn.disabled = false;
+      alert("กรอกข้อมูลให้ครบ")
 
-            return;
-        }
+      btn.disabled = false
 
-        //
-        // GET LINE PROFILE
-        //
-
-        let userId = "unknown";
-
-        if (liff.isLoggedIn()) {
-
-            const profile =
-              await liff.getProfile();
-
-            console.log("PROFILE =", profile);
-
-            userId = profile.userId;
-        }
-
-        console.log("USER ID =", userId);
-
-        //
-        // SEND REGISTER
-        //
-
-        console.log("SEND REGISTER");
-
-        const registerRes =
-          await fetch( `${workerUrl}/register-user`,
-              {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify({
-
-                    user_id: userId,
-
-                    name: name,
-
-                    phone: phone,
-
-                    email: email
-                })
-            }
-          );
-
-        console.log(
-          "REGISTER STATUS =",
-          registerRes.status
-        );
-
-        const registerJson =
-          await registerRes.json();
-
-        console.log(
-          "REGISTER RESULT =",
-          registerJson
-        );
-
-        if (!registerRes.ok) {
-
-            throw new Error(
-
-              registerJson.message ||
-
-              "register failed"
-            );
-        }
-
-        //
-        // SUCCESS
-        //
-
-        alert("ลงทะเบียนสำเร็จ");
-
-        if (liff.isInClient()) {
-
-            liff.closeWindow();
-        }
-
-    } catch (err) {
-
-        console.error(
-          "REGISTER ERROR:",
-          err
-        );
-
-        alert(
-          "ERROR: " + err.message
-        );
-
-    } finally {
-
-        document
-          .getElementById("saveBtn")
-          .disabled = false;
+      return
     }
+
+    // =========================
+    // GET PROFILE
+    // =========================
+
+    const profile =
+      await liff.getProfile()
+
+    console.log("PROFILE:", profile)
+
+    // =========================
+    // DATA
+    // =========================
+
+    const data = {
+
+      user_id:
+        profile.userId,
+
+      name:
+        name,
+
+      phone:
+        phone,
+
+      email:
+        email
+    }
+
+    console.log("SEND:", data)
+
+    // =========================
+    // FETCH REGISTER
+    // =========================
+
+    const res = await fetch(
+
+      `${workerUrl}/register-user`,
+
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify(data)
+      }
+    )
+
+    console.log("STATUS:", res.status)
+
+    const json =
+      await res.json()
+
+    console.log("RESULT:", json)
+
+    // =========================
+    // SUCCESS
+    // =========================
+
+    if (
+      json.status === "success"
+    ) {
+
+      alert("ลงทะเบียนสำเร็จ")
+
+      if (liff.isInClient()) {
+
+        liff.closeWindow()
+      }
+
+    } else {
+
+      alert(
+        json.message ||
+        "ลงทะเบียนไม่สำเร็จ"
+      )
+    }
+
+  } catch (err) {
+
+    console.error(
+      "REGISTER ERROR:",
+      err
+    )
+
+    alert(
+      "เกิดข้อผิดพลาด"
+    )
+
+  } finally {
+
+    document
+      .getElementById("saveBtn")
+      .disabled = false
+  }
 }
+ 
 
 </script>
 
