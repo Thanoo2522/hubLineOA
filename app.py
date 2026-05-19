@@ -197,8 +197,8 @@ def webhook():
         if not worker:
             return jsonify({"status": "error", "message": "no worker"})
 
-        #cloud_url = worker["cloud_url"]
-        cloud_url = "https://gitbackend-416424538655.asia-southeast3.run.app"
+        cloud_url = worker["cloud_url"]
+         
 
         for event in events:
 
