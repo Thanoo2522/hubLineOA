@@ -363,7 +363,22 @@ def webhook():
             "message":
                 str(e)
         }), 500
+ #=================================================
+@app.route("/register-page")
+def register_page():
 
+    worker = request.args.get(
+        "worker"
+    )
+
+    return render_template(
+
+        "register.html",
+
+        worker=worker,
+
+        liff_id=LIFF_ID
+    )
 # =========================================================
 # RUN
 # =========================================================
