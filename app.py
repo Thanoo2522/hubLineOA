@@ -36,10 +36,11 @@ hub_cred = credentials.Certificate(json.loads(HUB_FIREBASE_KEY))
 hub_app = firebase_admin.initialize_app(hub_cred, name="hub")
 hub_db = firestore.client(hub_app)
 
-# =========================================================
+# =========================================================                
 # LINE API
 # =========================================================
 LINE_REPLY_API = "https://api.line.me/v2/bot/message/reply"
+                  
 
 LINE_HEADERS = {
     "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
@@ -223,7 +224,7 @@ def webhook():
                     f"?worker={worker['server_id']}"
                 )
 
-                reply_register_message(reply_token, register_url)
+                reply_register_message(LINE_REPLY_API, register_url)
                 continue
 
             # FORWARD TO WORKER
