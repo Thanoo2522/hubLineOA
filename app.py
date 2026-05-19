@@ -6,11 +6,13 @@ import requests
 import time
 import firebase_admin
 from firebase_admin import credentials, firestore
+from flask_cors import CORS
 
 # =========================================================
 # FLASK
 # =========================================================
 app = Flask(__name__)
+CORS(app)
 
 # =========================================================
 # ENV
