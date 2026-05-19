@@ -223,73 +223,49 @@ def get_worker_url(worker_id):
 
         print("=" * 50)
         print("GET WORKER URL")
-        print("worker_id :", worker_id)
+        print("worker_id:", worker_id)
         print("=" * 50)
 
         # =====================================
-        # GET WORKER DOC
+        # CORRECT FIRESTORE PATH
+        # hub_system/server_pool/servers/{worker_id}
         # =====================================
-        worker_doc = (
+        doc_ref = (
             hub_db
-            .collection("worker")
+            .collection("hub_system")
+            .document("server_pool")
+            .collection("servers")
             .document(worker_id)
             .get()
         )
 
-        # =====================================
-        # NOT FOUND
-        # =====================================
-        if not worker_doc.exists:
+        if not doc_ref.exists:
 
             return jsonify({
 
-                "status":
-                    "error",
-
-                "message":
-                    "worker not found"
+                "status": "error",
+                "message": "worker not found"
             }), 404
 
-        worker_data = (
-            worker_doc
-            .to_dict()
-        )
+        data = doc_ref.to_dict()
 
-        print(json.dumps(
-            worker_data,
-            indent=2,
-            ensure_ascii=False
-        ))
+        print("WORKER DATA:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        # =====================================
-        # GET CLOUD URL
-        # =====================================
-        cloud_url = (
-            worker_data
-            .get("cloud_url")
-        )
+        cloud_url = data.get("cloud_url")
 
         if not cloud_url:
 
             return jsonify({
 
-                "status":
-                    "error",
-
-                "message":
-                    "cloud_url not found"
+                "status": "error",
+                "message": "cloud_url not found"
             }), 400
 
-        # =====================================
-        # SUCCESS
-        # =====================================
         return jsonify({
 
-            "status":
-                "success",
-
-            "register_url":
-                cloud_url
+            "status": "success",
+            "register_url": cloud_url
         })
 
     except Exception as e:
@@ -298,11 +274,8 @@ def get_worker_url(worker_id):
 
         return jsonify({
 
-            "status":
-                "error",
-
-            "message":
-                str(e)
+            "status": "error",
+            "message": str(e)
         }), 500
 # =========================================================
 # WEBHOOK
