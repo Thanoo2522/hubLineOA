@@ -227,7 +227,7 @@ def get_worker_url(worker_id):
         print("=" * 50)
 
         # =====================================
-        # CORRECT FIRESTORE PATH
+        # FIRESTORE PATH
         # hub_system/server_pool/servers/{worker_id}
         # =====================================
         doc_ref = (
@@ -247,11 +247,17 @@ def get_worker_url(worker_id):
                 "message": "worker not found"
             }), 404
 
+        # =====================================
+        # DATA
+        # =====================================
         data = doc_ref.to_dict()
 
-        print("WORKER DATA:")
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        # safe log (กัน Timestamp error)
+        print(json.dumps(str(data), indent=2, ensure_ascii=False))
 
+        # =====================================
+        # CLOUD URL
+        # =====================================
         cloud_url = data.get("cloud_url")
 
         if not cloud_url:
@@ -262,6 +268,9 @@ def get_worker_url(worker_id):
                 "message": "cloud_url not found"
             }), 400
 
+        # =====================================
+        # SUCCESS
+        # =====================================
         return jsonify({
 
             "status": "success",
