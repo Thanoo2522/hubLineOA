@@ -209,7 +209,60 @@ def reply_register_message(
 
     print(r.status_code)
     print(r.text)
+#==========================================================
+# =========================================================
+# GET WORKER URL
+# =========================================================
+@app.route(
+    "/get-worker-url/<worker_id>"
+)
+def get_worker_url(worker_id):
 
+    try:
+
+        doc = (
+            hub_db
+            .collection("hub_system")
+            .document("server_pool")
+            .collection("servers")
+            .document(worker_id)
+            .get()
+        )
+
+        if not doc.exists:
+
+            return jsonify({
+
+                "status":
+                    "error",
+
+                "message":
+                    "worker not found"
+            })
+
+        data = doc.to_dict()
+
+        return jsonify({
+
+            "status":
+                "success",
+
+            "register_url":
+                data.get("cloud_url")
+        })
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(e)
+        })
 # =========================================================
 # WEBHOOK
 # =========================================================
