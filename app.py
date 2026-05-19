@@ -214,22 +214,32 @@ def reply_register_message(
 # GET WORKER URL
 # =========================================================
 @app.route(
-    "/get-worker-url/<worker_id>"
+    "/get-worker-url/<worker_id>",
+    methods=["GET"]
 )
 def get_worker_url(worker_id):
 
     try:
 
-        doc = (
+        print("=" * 50)
+        print("GET WORKER URL")
+        print("worker_id :", worker_id)
+        print("=" * 50)
+
+        # =====================================
+        # GET WORKER DOC
+        # =====================================
+        worker_doc = (
             hub_db
-            .collection("hub_system")
-            .document("server_pool")
-            .collection("servers")
+            .collection("worker")
             .document(worker_id)
             .get()
         )
 
-        if not doc.exists:
+        # =====================================
+        # NOT FOUND
+        # =====================================
+        if not worker_doc.exists:
 
             return jsonify({
 
@@ -238,17 +248,48 @@ def get_worker_url(worker_id):
 
                 "message":
                     "worker not found"
-            })
+            }), 404
 
-        data = doc.to_dict()
+        worker_data = (
+            worker_doc
+            .to_dict()
+        )
 
+        print(json.dumps(
+            worker_data,
+            indent=2,
+            ensure_ascii=False
+        ))
+
+        # =====================================
+        # GET CLOUD URL
+        # =====================================
+        cloud_url = (
+            worker_data
+            .get("cloud_url")
+        )
+
+        if not cloud_url:
+
+            return jsonify({
+
+                "status":
+                    "error",
+
+                "message":
+                    "cloud_url not found"
+            }), 400
+
+        # =====================================
+        # SUCCESS
+        # =====================================
         return jsonify({
 
             "status":
                 "success",
 
             "register_url":
-                data.get("cloud_url")
+                cloud_url
         })
 
     except Exception as e:
@@ -262,7 +303,7 @@ def get_worker_url(worker_id):
 
             "message":
                 str(e)
-        })
+        }), 500
 # =========================================================
 # WEBHOOK
 # =========================================================
