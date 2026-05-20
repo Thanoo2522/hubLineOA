@@ -16,7 +16,7 @@ CORS(app)
 
 # =========================================================
 # ENV
-# =========================================================
+# ===================================================== 
 HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LIFF_ID = os.environ.get("LIFF_ID")
