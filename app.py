@@ -248,6 +248,8 @@ def webhook():
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+
 # =========================================================
 # REGISTER PAGE
 # =========================================================
@@ -258,8 +260,10 @@ def register_page():
 
     return render_template(
         "register.html",
-        worker=worker,
-        liff_id=LIFF_ID
+       # worker=worker,
+       worker="work1",
+       # liff_id=LIFF_ID
+        liff_id="2010144029-njNgt99E"
     )
 
 # =========================================================
