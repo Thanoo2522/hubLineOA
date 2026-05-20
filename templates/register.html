@@ -12,7 +12,6 @@
 
   <title>Register</title>
 
-  <!-- LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
   <style>
@@ -61,8 +60,6 @@
       border-radius: 8px;
 
       font-size: 16px;
-
-      cursor: pointer;
     }
 
     button:disabled {
@@ -102,25 +99,15 @@
 
 <script>
 
-//
-// LIFF ID
-//
+const liffId =
+  "{{ liff_id }}";
 
-const liffId = "{{ liff_id }}";
+const HUB_URL =
+  "https://hublineoa-369387278497.asia-southeast3.run.app";
 
-//
-// FIX WORKER URL
-//
-
-const workerUrl =
-  "https://gitbackend-416424538655.asia-southeast3.run.app";
-
-console.log("WORKER URL =", workerUrl);
-
-//
+// =====================================================
 // INIT LIFF
-//
-
+// =====================================================
 async function initLIFF() {
 
     try {
@@ -143,7 +130,10 @@ async function initLIFF() {
 
     } catch (err) {
 
-        console.error("LIFF ERROR:", err);
+        console.error(
+          "LIFF ERROR:",
+          err
+        );
 
         alert("LIFF INIT ERROR");
     }
@@ -151,18 +141,19 @@ async function initLIFF() {
 
 initLIFF();
 
-//
+// =====================================================
 // REGISTER
-//
-
- async function saveRegister() {
+// =====================================================
+async function saveRegister() {
 
   try {
 
     console.log("START REGISTER")
 
     const btn =
-      document.getElementById("saveBtn")
+      document.getElementById(
+        "saveBtn"
+      )
 
     btn.disabled = true
 
@@ -171,21 +162,25 @@ initLIFF();
     // =========================
 
     const name =
-      document.getElementById("name")
-      .value
-      .trim()
+      document.getElementById(
+        "name"
+      ).value.trim()
 
     const phone =
-      document.getElementById("phone")
-      .value
-      .trim()
+      document.getElementById(
+        "phone"
+      ).value.trim()
 
     const email =
-      document.getElementById("email")
-      .value
-      .trim()
+      document.getElementById(
+        "email"
+      ).value.trim()
 
-    if (!name || !phone || !email) {
+    if (
+      !name ||
+      !phone ||
+      !email
+    ) {
 
       alert("กรอกข้อมูลให้ครบ")
 
@@ -201,7 +196,10 @@ initLIFF();
     const profile =
       await liff.getProfile()
 
-    console.log("PROFILE:", profile)
+    console.log(
+      "PROFILE:",
+      profile
+    )
 
     // =========================
     // DATA
@@ -230,26 +228,34 @@ initLIFF();
 
     const res = await fetch(
 
-      `${workerUrl}/register-user`,
+      `${HUB_URL}/register-user`,
 
       {
+
         method: "POST",
 
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type":
+            "application/json"
         },
 
-        body: JSON.stringify(data)
-         
+        body:
+          JSON.stringify(data)
       }
     )
 
-    console.log("STATUS:", res.status)
+    console.log(
+      "STATUS:",
+      res.status
+    )
 
     const json =
       await res.json()
 
-    console.log("RESULT:", json)
+    console.log(
+      "RESULT:",
+      json
+    )
 
     // =========================
     // SUCCESS
@@ -261,7 +267,9 @@ initLIFF();
 
       alert("ลงทะเบียนสำเร็จ")
 
-      if (liff.isInClient()) {
+      if (
+        liff.isInClient()
+      ) {
 
         liff.closeWindow()
       }
@@ -269,7 +277,9 @@ initLIFF();
     } else {
 
       alert(
+
         json.message ||
+
         "ลงทะเบียนไม่สำเร็จ"
       )
     }
@@ -288,11 +298,12 @@ initLIFF();
   } finally {
 
     document
-      .getElementById("saveBtn")
+      .getElementById(
+        "saveBtn"
+      )
       .disabled = false
   }
 }
- 
 
 </script>
 
