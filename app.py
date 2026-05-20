@@ -19,36 +19,39 @@ app = Flask(__name__)
 # =========================================================
 # ENV
 # =========================================================
-HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
-
-WORKER_FIREBASE_KEY = os.environ.get("WORKER_FIREBASE_KEY")
+HUB_FIREBASE_KEY = os.environ.get(
+    "HUB_FIREBASE_KEY"
+)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
     "LINE_CHANNEL_ACCESS_TOKEN"
 )
 
-LIFF_ID = os.environ.get("LIFF_ID")
+LIFF_ID = os.environ.get(
+    "LIFF_ID"
+)
 
 # =========================================================
 # VALIDATE ENV
 # =========================================================
 if not HUB_FIREBASE_KEY:
-    raise RuntimeError("Missing HUB_FIREBASE_KEY")
-
-if not WORKER_FIREBASE_KEY:
-    raise RuntimeError("Missing WORKER_FIREBASE_KEY")
+    raise RuntimeError(
+        "Missing HUB_FIREBASE_KEY"
+    )
 
 if not LINE_CHANNEL_ACCESS_TOKEN:
-    raise RuntimeError("Missing LINE_CHANNEL_ACCESS_TOKEN")
+    raise RuntimeError(
+        "Missing LINE_CHANNEL_ACCESS_TOKEN"
+    )
 
 if not LIFF_ID:
-    raise RuntimeError("Missing LIFF_ID")
+    raise RuntimeError(
+        "Missing LIFF_ID"
+    )
 
 # =========================================================
 # FIREBASE
 # =========================================================
-
-# HUB
 hub_cred = credentials.Certificate(
     json.loads(HUB_FIREBASE_KEY)
 )
@@ -59,18 +62,6 @@ hub_app = firebase_admin.initialize_app(
 )
 
 hub_db = firestore.client(hub_app)
-
-# WORKER
-worker_cred = credentials.Certificate(
-    json.loads(WORKER_FIREBASE_KEY)
-)
-
-worker_app = firebase_admin.initialize_app(
-    worker_cred,
-    name="worker"
-)
-
-worker_db = firestore.client(worker_app)
 
 # =========================================================
 # LINE API
@@ -106,7 +97,9 @@ def is_worker_online(data):
         if data.get("status") != "online":
             return False
 
-        last_heartbeat = data.get("last_heartbeat")
+        last_heartbeat = data.get(
+            "last_heartbeat"
+        )
 
         if not last_heartbeat:
             return False
@@ -139,6 +132,10 @@ def get_best_worker():
         .stream()
     )
 
+    selected = None
+
+    lowest_load = 999999
+
     for doc in docs:
 
         data = doc.to_dict()
@@ -151,14 +148,27 @@ def get_best_worker():
         if not cloud_url:
             continue
 
-        return {
+        load_score = float(
+            data.get(
+                "load_score",
+                999999
+            )
+        )
 
-            "server_id": doc.id,
+        if load_score < lowest_load:
 
-            "cloud_url": cloud_url
-        }
+            lowest_load = load_score
 
-    return None
+            selected = {
+
+                "server_id": doc.id,
+
+                "cloud_url": cloud_url
+            }
+
+    print("SELECTED =", selected)
+
+    return selected
 
 # =========================================================
 # REPLY REGISTER MESSAGE
@@ -193,6 +203,7 @@ def reply_register_message(
     )
 
     print("LINE STATUS:", r.status_code)
+
     print(r.text)
 
 # =========================================================
@@ -206,74 +217,66 @@ def webhook():
         body = request.get_json()
 
         print("=" * 50)
+
         print("WEBHOOK")
+
         print(json.dumps(
             body,
             indent=2,
             ensure_ascii=False
         ))
+
         print("=" * 50)
 
         events = body.get("events", [])
 
-        worker = get_best_worker()
-
-        if not worker:
-
-            return jsonify({
-
-                "status": "error",
-
-                "message": "no worker"
-            })
-
-        cloud_url = worker["cloud_url"]
-
         for event in events:
 
-            reply_token = event.get("replyToken")
+            reply_token = event.get(
+                "replyToken"
+            )
 
-            source = event.get("source", {})
+            source = event.get(
+                "source",
+                {}
+            )
 
-            user_id = source.get("userId")
+            user_id = source.get(
+                "userId"
+            )
 
             if not user_id:
                 continue
 
             # ====================================
-            # CHECK REGISTER
+            # CHECK USER MAPPING
             # ====================================
 
-            check_url = (
-                cloud_url +
-                "/check-register"
+            mapping_doc = (
+
+                hub_db.collection("hub_system")
+                .document("user_mapping")
+                .collection("users")
+                .document(user_id)
+                .get()
             )
-
-            r = requests.post(
-
-                check_url,
-
-                json={
-                    "user_id": user_id
-                },
-
-                timeout=10
-            )
-
-            result = r.json()
-
-            registered = result.get(
-                "registered",
-                False
-            )
-
-            print("REGISTERED =", registered)
 
             # ====================================
             # NOT REGISTER
             # ====================================
 
-            if not registered:
+            if not mapping_doc.exists:
+
+                worker = get_best_worker()
+
+                if not worker:
+
+                    return jsonify({
+
+                        "status": "error",
+
+                        "message": "no worker"
+                    })
 
                 register_url = (
 
@@ -282,7 +285,10 @@ def webhook():
                     f"?worker={worker['server_id']}"
                 )
 
-                print("REGISTER URL =", register_url)
+                print(
+                    "REGISTER URL =",
+                    register_url
+                )
 
                 reply_register_message(
                     reply_token,
@@ -292,17 +298,26 @@ def webhook():
                 continue
 
             # ====================================
+            # GET MAPPING
+            # ====================================
+
+            mapping_data = mapping_doc.to_dict()
+
+            worker_url = mapping_data.get(
+                "cloud_url"
+            )
+
+            if not worker_url:
+
+                continue
+
+            # ====================================
             # FORWARD TO WORKER
             # ====================================
 
-            worker_url = (
-                cloud_url +
-                "/worker-webhook"
-            )
-
             rr = requests.post(
 
-                worker_url,
+                worker_url + "/worker-webhook",
 
                 json={
                     "events": [event]
@@ -360,11 +375,34 @@ def register_user():
 
             }), 400
 
-        worker_db.collection("user") \
+        # ====================================
+        # GET BEST WORKER
+        # ====================================
+
+        worker = get_best_worker()
+
+        if not worker:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "no worker"
+
+            }), 500
+
+        # ====================================
+        # SAVE USER MAPPING
+        # ====================================
+
+        hub_db.collection("hub_system") \
+            .document("user_mapping") \
+            .collection("users") \
             .document(user_id) \
             .set({
 
-                "userId": user_id,
+                "user_id":
+                    user_id,
 
                 "fullname":
                     body.get("name", ""),
@@ -375,11 +413,49 @@ def register_user():
                 "email":
                     body.get("email", ""),
 
-                "register": True,
+                "worker_id":
+                    worker["server_id"],
+
+                "cloud_url":
+                    worker["cloud_url"],
+
+                "register":
+                    True,
 
                 "created_at":
                     datetime.utcnow()
             })
+
+        print("MAPPING SAVED")
+
+        # ====================================
+        # FORWARD REGISTER TO WORKER
+        # ====================================
+
+        register_url = (
+            worker["cloud_url"]
+            + "/register-user"
+        )
+
+        rr = requests.post(
+
+            register_url,
+
+            json=body,
+
+            timeout=10
+        )
+
+        print(
+            "WORKER REGISTER STATUS =",
+            rr.status_code
+        )
+
+        print(rr.text)
+
+        # ====================================
+        # SUCCESS
+        # ====================================
 
         return jsonify({
 
@@ -415,7 +491,7 @@ def register_page():
 
 # =========================================================
 # RUN
-# ==================================================== 
+# =========================================================
 if __name__ == "__main__":
 
     app.run(
