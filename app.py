@@ -361,7 +361,10 @@ def register_user():
             silent=True
         ) or {}
 
-        print("REGISTER BODY =", body)
+        print("=" * 50)
+        print("REGISTER BODY")
+        print(body)
+        print("=" * 50)
 
         user_id = body.get("user_id")
 
@@ -381,6 +384,8 @@ def register_user():
 
         worker = get_best_worker()
 
+        print("WORKER =", worker)
+
         if not worker:
 
             return jsonify({
@@ -391,51 +396,84 @@ def register_user():
 
             }), 500
 
+        worker_id = worker.get("server_id")
+
+        cloud_url = worker.get("cloud_url")
+
+        print("WORKER ID =", worker_id)
+        print("CLOUD URL =", cloud_url)
+
+        if not worker_id:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "worker_id missing"
+
+            }), 500
+
+        if not cloud_url:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "cloud_url missing"
+
+            }), 500
+
         # ====================================
         # SAVE USER MAPPING
         # ====================================
+
+        mapping_data = {
+
+            "user_id":
+                user_id,
+
+            "fullname":
+                body.get("name", ""),
+
+            "phone":
+                body.get("phone", ""),
+
+            "email":
+                body.get("email", ""),
+
+            "worker_id":
+                worker_id,
+
+            "cloud_url":
+                cloud_url,
+
+            "register":
+                True,
+
+            "created_at":
+                datetime.utcnow()
+        }
+
+        print("SAVE MAPPING =", mapping_data)
 
         hub_db.collection("hub_system") \
             .document("user_mapping") \
             .collection("users") \
             .document(user_id) \
-            .set({
+            .set(mapping_data)
 
-                "user_id":
-                    user_id,
-
-                "fullname":
-                    body.get("name", ""),
-
-                "phone":
-                    body.get("phone", ""),
-
-                "email":
-                    body.get("email", ""),
-
-                "worker_id":
-                    worker["server_id"],
-
-                "cloud_url":
-                    worker["cloud_url"],
-
-                "register":
-                    True,
-
-                "created_at":
-                    datetime.utcnow()
-            })
-
-        print("MAPPING SAVED")
+        print("✅ MAPPING SAVED")
 
         # ====================================
         # FORWARD REGISTER TO WORKER
         # ====================================
 
         register_url = (
-            worker["cloud_url"]
-            + "/register-user"
+            cloud_url +
+            "/register-user"
         )
+
+        print("REGISTER URL =", register_url)
 
         rr = requests.post(
 
@@ -451,7 +489,10 @@ def register_user():
             rr.status_code
         )
 
-        print(rr.text)
+        print(
+            "WORKER REGISTER TEXT =",
+            rr.text
+        )
 
         # ====================================
         # SUCCESS
