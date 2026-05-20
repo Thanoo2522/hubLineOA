@@ -209,6 +209,11 @@ def reply_register_message(
 # =========================================================
 # WEBHOOK
 # =========================================================
+
+# =========================================================
+# WEBHOOK
+# HUB -> FORWARD TO WORKER MAIN ROUTE
+# =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
@@ -298,7 +303,7 @@ def webhook():
                 continue
 
             # ====================================
-            # GET MAPPING
+            # GET USER MAPPING
             # ====================================
 
             mapping_data = mapping_doc.to_dict()
@@ -307,17 +312,33 @@ def webhook():
                 "cloud_url"
             )
 
+            worker_id = mapping_data.get(
+                "worker_id"
+            )
+
             if not worker_url:
+
+                print("NO worker_url")
 
                 continue
 
+            print(
+                "FORWARD TO:",
+                worker_id
+            )
+
+            print(
+                "URL:",
+                worker_url
+            )
+
             # ====================================
-            # FORWARD TO WORKER
+            # FORWARD TO WORKER MAIN ROUTE
             # ====================================
 
             rr = requests.post(
 
-                worker_url + "/worker-webhook",
+                worker_url + "/main-route",
 
                 json={
                     "events": [event]
@@ -348,6 +369,7 @@ def webhook():
             "message": str(e)
 
         }), 500
+
 
 # =========================================================
 # REGISTER USER
