@@ -10,7 +10,7 @@ from datetime import datetime
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-
+import base64
 # =========================================================
 # FLASK
 # =========================================================
@@ -373,7 +373,7 @@ def webhook():
             )
 
             # ====================================
-            # MESSAGE TYPE
+            # GET MESSAGE
             # ====================================
 
             message = event.get(
@@ -386,8 +386,18 @@ def webhook():
             )
 
             # ====================================
+            # DEFAULT PAYLOAD
+            # ====================================
+
+            payload = {
+
+                "events":
+                    [event]
+            }
+
+            # ====================================
             # IMAGE MESSAGE
-            # HUB LOAD IMAGE
+            # HUB DOWNLOAD IMAGE
             # ====================================
 
             if message_type == "image":
@@ -396,6 +406,11 @@ def webhook():
 
                     message_id = message.get(
                         "id"
+                    )
+
+                    print(
+                        "MESSAGE ID =",
+                        message_id
                     )
 
                     image_url = (
@@ -408,15 +423,19 @@ def webhook():
                         "LOAD IMAGE FROM LINE"
                     )
 
+                    headers = {
+
+                        "Authorization":
+                            f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+                    }
+
                     image_response = requests.get(
 
                         image_url,
 
-                        headers={
+                        headers=headers,
 
-                            "Authorization":
-                                f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-                        },
+                        stream=True,
 
                         timeout=30
                     )
@@ -432,37 +451,66 @@ def webhook():
 
                     if image_response.status_code != 200:
 
-                        print(
-                            "IMAGE DOWNLOAD ERROR"
-                        )
+                        try:
 
-                        print(
-                            image_response.text
-                        )
+                            print(
+                                "LINE ERROR =",
+                                image_response.text
+                            )
+
+                        except:
+                            pass
 
                         reply_message(
 
                             reply_token,
 
-                            "โหลดรูปจาก LINE ไม่สำเร็จ"
+                            f"โหลดรูปจาก LINE ไม่สำเร็จ\n"
+                            f"STATUS: {image_response.status_code}"
                         )
 
                         continue
 
                     # ------------------------------
-                    # BASE64 ENCODE
+                    # IMAGE BYTES
+                    # ------------------------------
+
+                    image_bytes = image_response.content
+
+                    print(
+                        "IMAGE BYTES =",
+                        len(image_bytes)
+                    )
+
+                    if not image_bytes:
+
+                        reply_message(
+
+                            reply_token,
+
+                            "ไม่พบข้อมูลรูป"
+                        )
+
+                        continue
+
+                    # ------------------------------
+                    # BASE64
                     # ------------------------------
 
                     image_base64 = base64.b64encode(
 
-                        image_response.content
+                        image_bytes
 
                     ).decode("utf-8")
 
                     print(
-                        "IMAGE BASE64 SIZE =",
+                        "BASE64 SIZE =",
                         len(image_base64)
                     )
+
+                    # ------------------------------
+                    # SEND TO WORKER
+                    # ------------------------------
 
                     payload = {
 
@@ -487,18 +535,6 @@ def webhook():
                     continue
 
             # ====================================
-            # OTHER MESSAGE
-            # ====================================
-
-            else:
-
-                payload = {
-
-                    "events":
-                        [event]
-                }
-
-            # ====================================
             # FORWARD TO WORKER
             # ====================================
 
@@ -519,6 +555,7 @@ def webhook():
                 )
 
                 print(
+                    "WORKER RESPONSE =",
                     rr.text
                 )
 
