@@ -205,7 +205,36 @@ def reply_register_message(
     print("LINE STATUS:", r.status_code)
 
     print(r.text)
+#=========================================================
+def reply_message(reply_token, text):
 
+    try:
+
+        requests.post(
+
+            LINE_REPLY_API,
+
+            headers=LINE_HEADERS,
+
+            json={
+
+                "replyToken":
+                    reply_token,
+
+                "messages": [
+                    {
+                        "type": "text",
+                        "text": text
+                    }
+                ]
+            },
+
+            timeout=10
+        )
+
+    except Exception as e:
+
+        print("reply error:", e)
 # =========================================================
 # WEBHOOK
 # =========================================================
@@ -213,6 +242,9 @@ def reply_register_message(
 # =========================================================
 # WEBHOOK
 # HUB -> FORWARD TO WORKER MAIN ROUTE
+# =========================================================
+# =========================================================
+# WEBHOOK
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -222,15 +254,12 @@ def webhook():
         body = request.get_json()
 
         print("=" * 50)
-
         print("WEBHOOK")
-
         print(json.dumps(
             body,
             indent=2,
             ensure_ascii=False
         ))
-
         print("=" * 50)
 
         events = body.get("events", [])
@@ -286,7 +315,6 @@ def webhook():
                 register_url = (
 
                     f"https://liff.line.me/{LIFF_ID}"
-
                     f"?worker={worker['server_id']}"
                 )
 
@@ -333,18 +361,133 @@ def webhook():
             )
 
             # ====================================
-            # FORWARD TO WORKER MAIN ROUTE
+            # MESSAGE INFO
+            # ====================================
+
+            message = event.get(
+                "message",
+                {}
+            )
+
+            message_type = message.get(
+                "type"
+            )
+
+            # ====================================
+            # DEFAULT PAYLOAD
+            # ====================================
+
+            forward_payload = {
+                "events": [event]
+            }
+
+            # ====================================
+            # IMAGE MESSAGE
+            # ====================================
+
+            if message_type == "image":
+
+                try:
+
+                    message_id = message.get(
+                        "id"
+                    )
+
+                    print(
+                        "DOWNLOAD IMAGE:",
+                        message_id
+                    )
+
+                    image_url = (
+                        "https://api-data.line.me/v2/bot/message/"
+                        f"{message_id}/content"
+                    )
+
+                    r = requests.get(
+
+                        image_url,
+
+                        headers={
+
+                            "Authorization":
+                                f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+                        },
+
+                        timeout=30
+                    )
+
+                    print(
+                        "IMAGE STATUS =",
+                        r.status_code
+                    )
+
+                    if r.status_code != 200:
+
+                        print(
+                            "IMAGE DOWNLOAD ERROR"
+                        )
+
+                        print(r.text)
+
+                        reply_message(
+
+                            reply_token,
+
+                            "โหลดรูปจาก LINE ไม่สำเร็จ"
+                        )
+
+                        continue
+
+                    # ====================================
+                    # BASE64 ENCODE
+                    # ====================================
+
+                    import base64
+
+                    image_base64 = base64.b64encode(
+                        r.content
+                    ).decode("utf-8")
+
+                    # ====================================
+                    # ADD IMAGE DATA
+                    # ====================================
+
+                    forward_payload = {
+
+                        "events": [event],
+
+                        "image_binary":
+                            image_base64
+                    }
+
+                    print(
+                        "IMAGE ENCODE SUCCESS"
+                    )
+
+                except Exception as e:
+
+                    traceback.print_exc()
+
+                    reply_message(
+
+                        reply_token,
+
+                        f"โหลดรูปผิดพลาด\n{str(e)}"
+                    )
+
+                    continue
+
+            # ====================================
+            # FORWARD TO WORKER
             # ====================================
 
             rr = requests.post(
 
                 worker_url + "/main-route",
 
-                json={
-                    "events": [event]
-                },
+                json=forward_payload,
 
-                timeout=10
+                timeout=60
             )
 
             print(
