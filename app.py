@@ -246,12 +246,19 @@ def reply_message(reply_token, text):
 # =========================================================
 # WEBHOOK
 # =========================================================
+import base64
+
+# =========================================================
+# WEBHOOK
+# =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
     try:
 
-        body = request.get_json()
+        body = request.get_json(
+            silent=True
+        ) or {}
 
         print("=" * 50)
         print("WEBHOOK")
@@ -262,7 +269,10 @@ def webhook():
         ))
         print("=" * 50)
 
-        events = body.get("events", [])
+        events = body.get(
+            "events",
+            []
+        )
 
         for event in events:
 
@@ -296,7 +306,7 @@ def webhook():
             )
 
             # ====================================
-            # NOT REGISTER
+            # USER NOT REGISTER
             # ====================================
 
             if not mapping_doc.exists:
@@ -307,9 +317,11 @@ def webhook():
 
                     return jsonify({
 
-                        "status": "error",
+                        "status":
+                            "error",
 
-                        "message": "no worker"
+                        "message":
+                            "no worker"
                     })
 
                 register_url = (
@@ -361,7 +373,7 @@ def webhook():
             )
 
             # ====================================
-            # MESSAGE INFO
+            # MESSAGE TYPE
             # ====================================
 
             message = event.get(
@@ -374,15 +386,8 @@ def webhook():
             )
 
             # ====================================
-            # DEFAULT PAYLOAD
-            # ====================================
-
-            forward_payload = {
-                "events": [event]
-            }
-
-            # ====================================
             # IMAGE MESSAGE
+            # HUB LOAD IMAGE
             # ====================================
 
             if message_type == "image":
@@ -393,17 +398,17 @@ def webhook():
                         "id"
                     )
 
-                    print(
-                        "DOWNLOAD IMAGE:",
-                        message_id
-                    )
-
                     image_url = (
+
                         "https://api-data.line.me/v2/bot/message/"
                         f"{message_id}/content"
                     )
 
-                    r = requests.get(
+                    print(
+                        "LOAD IMAGE FROM LINE"
+                    )
+
+                    image_response = requests.get(
 
                         image_url,
 
@@ -417,17 +422,23 @@ def webhook():
                     )
 
                     print(
-                        "IMAGE STATUS =",
-                        r.status_code
+                        "LINE IMAGE STATUS =",
+                        image_response.status_code
                     )
 
-                    if r.status_code != 200:
+                    # ------------------------------
+                    # DOWNLOAD ERROR
+                    # ------------------------------
+
+                    if image_response.status_code != 200:
 
                         print(
                             "IMAGE DOWNLOAD ERROR"
                         )
 
-                        print(r.text)
+                        print(
+                            image_response.text
+                        )
 
                         reply_message(
 
@@ -438,31 +449,29 @@ def webhook():
 
                         continue
 
-                    # ====================================
+                    # ------------------------------
                     # BASE64 ENCODE
-                    # ====================================
-
-                    import base64
+                    # ------------------------------
 
                     image_base64 = base64.b64encode(
-                        r.content
+
+                        image_response.content
+
                     ).decode("utf-8")
 
-                    # ====================================
-                    # ADD IMAGE DATA
-                    # ====================================
+                    print(
+                        "IMAGE BASE64 SIZE =",
+                        len(image_base64)
+                    )
 
-                    forward_payload = {
+                    payload = {
 
-                        "events": [event],
+                        "events":
+                            [event],
 
-                        "image_binary":
+                        "image_data":
                             image_base64
                     }
-
-                    print(
-                        "IMAGE ENCODE SUCCESS"
-                    )
 
                 except Exception as e:
 
@@ -472,30 +481,57 @@ def webhook():
 
                         reply_token,
 
-                        f"โหลดรูปผิดพลาด\n{str(e)}"
+                        f"โหลดรูป error\n{str(e)}"
                     )
 
                     continue
 
             # ====================================
+            # OTHER MESSAGE
+            # ====================================
+
+            else:
+
+                payload = {
+
+                    "events":
+                        [event]
+                }
+
+            # ====================================
             # FORWARD TO WORKER
             # ====================================
 
-            rr = requests.post(
+            try:
 
-                worker_url + "/main-route",
+                rr = requests.post(
 
-                json=forward_payload,
+                    worker_url + "/main-route",
 
-                timeout=60
-            )
+                    json=payload,
 
-            print(
-                "WORKER STATUS =",
-                rr.status_code
-            )
+                    timeout=60
+                )
 
-            print(rr.text)
+                print(
+                    "WORKER STATUS =",
+                    rr.status_code
+                )
+
+                print(
+                    rr.text
+                )
+
+            except Exception as e:
+
+                traceback.print_exc()
+
+                reply_message(
+
+                    reply_token,
+
+                    f"worker error\n{str(e)}"
+                )
 
         return jsonify({
             "status": "success"
@@ -507,9 +543,11 @@ def webhook():
 
         return jsonify({
 
-            "status": "error",
+            "status":
+                "error",
 
-            "message": str(e)
+            "message":
+                str(e)
 
         }), 500
 
