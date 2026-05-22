@@ -246,7 +246,7 @@ def reply_message(reply_token, text):
 # =========================================================
 # WEBHOOK
 # =========================================================
-import base64
+ 
 
 # =========================================================
 # WEBHOOK
@@ -256,23 +256,21 @@ def webhook():
 
     try:
 
-        body = request.get_json(
-            silent=True
-        ) or {}
+        body = request.get_json()
 
         print("=" * 50)
+
         print("WEBHOOK")
+
         print(json.dumps(
             body,
             indent=2,
             ensure_ascii=False
         ))
+
         print("=" * 50)
 
-        events = body.get(
-            "events",
-            []
-        )
+        events = body.get("events", [])
 
         for event in events:
 
@@ -306,7 +304,7 @@ def webhook():
             )
 
             # ====================================
-            # USER NOT REGISTER
+            # NOT REGISTER
             # ====================================
 
             if not mapping_doc.exists:
@@ -317,16 +315,15 @@ def webhook():
 
                     return jsonify({
 
-                        "status":
-                            "error",
+                        "status": "error",
 
-                        "message":
-                            "no worker"
+                        "message": "no worker"
                     })
 
                 register_url = (
 
                     f"https://liff.line.me/{LIFF_ID}"
+
                     f"?worker={worker['server_id']}"
                 )
 
@@ -373,51 +370,26 @@ def webhook():
             )
 
             # ====================================
-            # FORWARD EVENT ONLY
-            # HUB DOES NOT DOWNLOAD IMAGE
+            # FORWARD TO WORKER MAIN ROUTE
             # ====================================
 
-            payload = {
+            rr = requests.post(
 
-                "events":
-                    [event]
-            }
+                worker_url + "/main-route",
 
-            # ====================================
-            # FORWARD TO WORKER
-            # ====================================
+                json={
+                    "events": [event]
+                },
 
-            try:
+                timeout=10
+            )
 
-                rr = requests.post(
+            print(
+                "WORKER STATUS =",
+                rr.status_code
+            )
 
-                    worker_url + "/main-route",
-
-                    json=payload,
-
-                    timeout=60
-                )
-
-                print(
-                    "WORKER STATUS =",
-                    rr.status_code
-                )
-
-                print(
-                    "WORKER RESPONSE =",
-                    rr.text
-                )
-
-            except Exception as e:
-
-                traceback.print_exc()
-
-                reply_message(
-
-                    reply_token,
-
-                    f"worker error\n{str(e)}"
-                )
+            print(rr.text)
 
         return jsonify({
             "status": "success"
@@ -429,11 +401,9 @@ def webhook():
 
         return jsonify({
 
-            "status":
-                "error",
+            "status": "error",
 
-            "message":
-                str(e)
+            "message": str(e)
 
         }), 500
 
