@@ -5,12 +5,10 @@ import json
 import traceback
 import requests
 import time
-
 from datetime import datetime
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-import base64
 
 # =========================================================
 # FLASK
@@ -24,9 +22,6 @@ HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LIFF_ID = os.environ.get("LIFF_ID")
 
-# =========================================================
-# VALIDATE ENV
-# =========================================================
 if not HUB_FIREBASE_KEY:
     raise RuntimeError("Missing HUB_FIREBASE_KEY")
 
@@ -66,21 +61,19 @@ def home():
     return "HUB RUNNING"
 
 # =========================================================
-# CHECK WORKER ONLINE (UNCHANGED)
+# WORKER CHECK (UNCHANGED)
 # =========================================================
 def is_worker_online(data):
     try:
         if data.get("status") != "online":
             return False
 
-        last_heartbeat = data.get("last_heartbeat")
-        if not last_heartbeat:
+        last = data.get("last_heartbeat")
+        if not last:
             return False
 
         now = int(time.time())
-        diff = now - int(last_heartbeat)
-
-        if diff > 300:
+        if now - int(last) > 300:
             return False
 
         return True
@@ -94,15 +87,13 @@ def is_worker_online(data):
 # =========================================================
 def get_best_worker():
 
-    docs = (
-        hub_db.collection("hub_system")
-        .document("server_pool")
-        .collection("servers")
+    docs = hub_db.collection("hub_system") \
+        .document("server_pool") \
+        .collection("servers") \
         .stream()
-    )
 
     selected = None
-    lowest_load = 999999
+    lowest = 999999
 
     for doc in docs:
 
@@ -111,46 +102,70 @@ def get_best_worker():
         if not is_worker_online(data):
             continue
 
-        cloud_url = data.get("cloud_url")
-        if not cloud_url:
+        url = data.get("cloud_url")
+        if not url:
             continue
 
-        load_score = float(data.get("load_score", 999999))
+        score = float(data.get("load_score", 999999))
 
-        if load_score < lowest_load:
-
-            lowest_load = load_score
-
+        if score < lowest:
+            lowest = score
             selected = {
                 "server_id": doc.id,
-                "cloud_url": cloud_url
+                "cloud_url": url
             }
 
-    print("SELECTED =", selected)
     return selected
 
 # =========================================================
-# REPLY REGISTER MESSAGE (UNCHANGED)
+# STATE LOCK (NEW FIX - กันเปิดซ้อน)
 # =========================================================
-def reply_register_message(reply_token, register_url):
+def set_user_state(user_id, mode):
+    hub_db.collection("hub_system") \
+        .document("user_state") \
+        .collection("users") \
+        .document(user_id) \
+        .set({
+            "mode": mode,
+            "updated_at": datetime.utcnow()
+        })
 
-    payload = {
-        "replyToken": reply_token,
-        "messages": [{
-            "type": "text",
-            "text": "กรุณาลงทะเบียนก่อนใช้งาน\n\n" + register_url
-        }]
-    }
+def get_user_state(user_id):
+    doc = hub_db.collection("hub_system") \
+        .document("user_state") \
+        .collection("users") \
+        .document(user_id) \
+        .get()
+
+    if not doc.exists:
+        return None
+
+    return doc.to_dict()
+
+def clear_user_state(user_id):
+    hub_db.collection("hub_system") \
+        .document("user_state") \
+        .collection("users") \
+        .document(user_id) \
+        .delete()
+
+# =========================================================
+# LINE HELPERS
+# =========================================================
+def reply_register_message(reply_token, url):
 
     requests.post(
         LINE_REPLY_API,
         headers=LINE_HEADERS,
-        json=payload
+        json={
+            "replyToken": reply_token,
+            "messages": [{
+                "type": "text",
+                "text": "กรุณาลงทะเบียนก่อนใช้งาน\n\n" + url
+            }]
+        }
     )
 
-# =========================================================
-# REPLY MESSAGE (UNCHANGED)
-# =========================================================
 def reply_message(reply_token, text):
 
     try:
@@ -170,7 +185,7 @@ def reply_message(reply_token, text):
         print("reply error:", e)
 
 # =========================================================
-# WEBHOOK (UNCHANGED LOGIC)
+# WEBHOOK (FIXED OPEN-SPLIT)
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -178,43 +193,42 @@ def webhook():
     try:
         body = request.get_json()
 
-        print("=" * 50)
-        print("WEBHOOK")
-        print(json.dumps(body, indent=2, ensure_ascii=False))
-        print("=" * 50)
-
         events = body.get("events", [])
 
         for event in events:
 
             reply_token = event.get("replyToken")
-
-            source = event.get("source", {})
-            user_id = source.get("userId")
+            user_id = event.get("source", {}).get("userId")
 
             if not user_id:
                 continue
 
-            # ================================
-            # USER CHECK
-            # ================================
-            mapping_doc = (
-                hub_db.collection("hub_system")
-                .document("user_mapping")
-                .collection("users")
-                .document(user_id)
+            # =================================================
+            # CHECK USER REGISTER
+            # =================================================
+            mapping_doc = hub_db.collection("hub_system") \
+                .document("user_mapping") \
+                .collection("users") \
+                .document(user_id) \
                 .get()
-            )
 
-            # ================================
-            # NOT REGISTER
-            # ================================
+            # =================================================
+            # NOT REGISTER → LOCK + OPEN REGISTER ONLY ONCE
+            # =================================================
             if not mapping_doc.exists:
 
-                worker = get_best_worker()
+                state = get_user_state(user_id)
 
+                # 🔥 กันเปิดซ้ำ
+                if state and state.get("mode") == "register":
+                    print("SKIP DUP REGISTER")
+                    continue
+
+                worker = get_best_worker()
                 if not worker:
-                    return jsonify({"status": "error", "message": "no worker"})
+                    return jsonify({"status": "error"})
+
+                set_user_state(user_id, "register")
 
                 register_url = (
                     f"https://liff.line.me/{LIFF_ID}"
@@ -224,35 +238,29 @@ def webhook():
                 reply_register_message(reply_token, register_url)
                 continue
 
-            # ================================
-            # FORWARD TO WORKER
-            # ================================
-            mapping_data = mapping_doc.to_dict()
+            # =================================================
+            # REGISTERED → CLEAR STATE + FORWARD TO WORKER
+            # =================================================
+            clear_user_state(user_id)
 
-            worker_url = mapping_data.get("cloud_url")
-            worker_id = mapping_data.get("worker_id")
+            data = mapping_doc.to_dict()
+
+            worker_url = data.get("cloud_url")
 
             if not worker_url:
                 continue
 
-            rr = requests.post(
+            requests.post(
                 worker_url + "/main-route",
                 json={"events": [event]},
                 timeout=10
             )
 
-            print("WORKER STATUS =", rr.status_code)
-
         return jsonify({"status": "success"})
 
     except Exception as e:
         traceback.print_exc()
-
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
-
+        return jsonify({"status": "error"}), 500
 
 # =========================================================
 # REGISTER USER (UNCHANGED LOGIC)
@@ -262,16 +270,14 @@ def register_user():
 
     try:
         body = request.get_json(silent=True) or {}
-
         user_id = body.get("user_id")
 
         if not user_id:
-            return jsonify({"status": "error", "message": "no user_id"}), 400
+            return jsonify({"status": "error"}), 400
 
         worker = get_best_worker()
-
         if not worker:
-            return jsonify({"status": "error", "message": "no worker"}), 500
+            return jsonify({"status": "error"}), 500
 
         hub_db.collection("hub_system") \
             .document("user_mapping") \
@@ -288,7 +294,9 @@ def register_user():
                 "created_at": datetime.utcnow()
             })
 
-        # forward to worker
+        # 🔥 ปลด lock หลัง register สำเร็จ
+        clear_user_state(user_id)
+
         requests.post(
             worker["cloud_url"] + "/register-user",
             json=body,
@@ -302,26 +310,17 @@ def register_user():
 
     except Exception as e:
         traceback.print_exc()
-
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
-
+        return jsonify({"status": "error"}), 500
 
 # =========================================================
-# REGISTER PAGE (UNCHANGED)
+# REGISTER PAGE
 # =========================================================
 @app.route("/register-page")
 def register_page():
-
-    return render_template(
-        "register.html",
-        liff_id=LIFF_ID
-    )
+    return render_template("register.html", liff_id=LIFF_ID)
 
 # =========================================================
 # RUN
-# =====================================================
+# =========================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
