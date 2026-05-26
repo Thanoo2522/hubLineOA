@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify, render_template
-
 import os
 import json
 import traceback
@@ -61,7 +60,7 @@ def home():
     return "HUB RUNNING"
 
 # =========================================================
-# WORKER CHECK (UNCHANGED)
+# WORKER CHECK
 # =========================================================
 def is_worker_online(data):
     try:
@@ -73,17 +72,14 @@ def is_worker_online(data):
             return False
 
         now = int(time.time())
-        if now - int(last) > 300:
-            return False
-
-        return True
+        return (now - int(last)) <= 300
 
     except Exception:
         traceback.print_exc()
         return False
 
 # =========================================================
-# GET BEST WORKER (UNCHANGED)
+# GET BEST WORKER
 # =========================================================
 def get_best_worker():
 
@@ -118,7 +114,7 @@ def get_best_worker():
     return selected
 
 # =========================================================
-# STATE LOCK (NEW FIX - กันเปิดซ้อน)
+# STATE LOCK (REGISTER / VDO)
 # =========================================================
 def set_user_state(user_id, mode):
     hub_db.collection("hub_system") \
@@ -137,14 +133,41 @@ def get_user_state(user_id):
         .document(user_id) \
         .get()
 
-    if not doc.exists:
-        return None
-
-    return doc.to_dict()
+    return doc.to_dict() if doc.exists else None
 
 def clear_user_state(user_id):
     hub_db.collection("hub_system") \
         .document("user_state") \
+        .collection("users") \
+        .document(user_id) \
+        .delete()
+
+# =========================================================
+# VDO STATE LOCK (NEW)
+# =========================================================
+def set_vdo_state(user_id, project):
+    hub_db.collection("hub_system") \
+        .document("vdo_state") \
+        .collection("users") \
+        .document(user_id) \
+        .set({
+            "project": project,
+            "status": "open",
+            "updated_at": datetime.utcnow()
+        })
+
+def get_vdo_state(user_id):
+    doc = hub_db.collection("hub_system") \
+        .document("vdo_state") \
+        .collection("users") \
+        .document(user_id) \
+        .get()
+
+    return doc.to_dict() if doc.exists else None
+
+def clear_vdo_state(user_id):
+    hub_db.collection("hub_system") \
+        .document("vdo_state") \
         .collection("users") \
         .document(user_id) \
         .delete()
@@ -185,14 +208,13 @@ def reply_message(reply_token, text):
         print("reply error:", e)
 
 # =========================================================
-# WEBHOOK (FIXED OPEN-SPLIT)
+# WEBHOOK (FIXED + DEDUP + STATE LOCK)
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
     try:
         body = request.get_json()
-
         events = body.get("events", [])
 
         for event in events:
@@ -204,7 +226,23 @@ def webhook():
                 continue
 
             # =================================================
-            # CHECK USER REGISTER
+            # DEDUP EVENT (NEW FIX)
+            # =================================================
+            event_id = event.get("webhookEventId")
+
+            if event_id:
+                dedup_ref = hub_db.collection("hub_system") \
+                    .document("dedup") \
+                    .collection("events") \
+                    .document(event_id)
+
+                if dedup_ref.get().exists:
+                    continue
+
+                dedup_ref.set({"t": datetime.utcnow()})
+
+            # =================================================
+            # CHECK REGISTER
             # =================================================
             mapping_doc = hub_db.collection("hub_system") \
                 .document("user_mapping") \
@@ -213,15 +251,13 @@ def webhook():
                 .get()
 
             # =================================================
-            # NOT REGISTER → LOCK + OPEN REGISTER ONLY ONCE
+            # NOT REGISTER → OPEN REGISTER ONLY ONCE
             # =================================================
             if not mapping_doc.exists:
 
                 state = get_user_state(user_id)
 
-                # 🔥 กันเปิดซ้ำ
                 if state and state.get("mode") == "register":
-                    print("SKIP DUP REGISTER")
                     continue
 
                 worker = get_best_worker()
@@ -239,7 +275,7 @@ def webhook():
                 continue
 
             # =================================================
-            # REGISTERED → CLEAR STATE + FORWARD TO WORKER
+            # REGISTERED → CLEAR STATE + FORWARD
             # =================================================
             clear_user_state(user_id)
 
@@ -263,7 +299,7 @@ def webhook():
         return jsonify({"status": "error"}), 500
 
 # =========================================================
-# REGISTER USER (UNCHANGED LOGIC)
+# REGISTER USER
 # =========================================================
 @app.route("/register-user", methods=["POST"])
 def register_user():
@@ -294,7 +330,6 @@ def register_user():
                 "created_at": datetime.utcnow()
             })
 
-        # 🔥 ปลด lock หลัง register สำเร็จ
         clear_user_state(user_id)
 
         requests.post(
@@ -318,6 +353,20 @@ def register_user():
 @app.route("/register-page")
 def register_page():
     return render_template("register.html", liff_id=LIFF_ID)
+
+# =========================================================
+# CLOSE VDO STATE (NEW)
+# =========================================================
+@app.route("/close-vdo", methods=["POST"])
+def close_vdo():
+
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+
+    if user_id:
+        clear_vdo_state(user_id)
+
+    return jsonify({"status": "ok"})
 
 # =========================================================
 # RUN
