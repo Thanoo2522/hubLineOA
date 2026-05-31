@@ -101,54 +101,333 @@ def reply(token, text):
     )
 
 # =========================================================
-# WEBHOOK (FORWARD ONLY)
+# WEBHOOK
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
     try:
-        body = request.get_json()
-        events = body.get("events", [])
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        print("=" * 50)
+        print("HUB WEBHOOK")
+        print(json.dumps(
+            body,
+            indent=2,
+            ensure_ascii=False
+        ))
+        print("=" * 50)
+
+        events = body.get(
+            "events",
+            []
+        )
 
         for e in events:
 
-            token = e.get("replyToken")
-            user_id = e.get("source", {}).get("userId")
+            token = e.get(
+                "replyToken"
+            )
+
+            source = e.get(
+                "source",
+                {}
+            )
+
+            user_id = source.get(
+                "userId"
+            )
 
             if not user_id:
                 continue
 
-            mapping = hub_db.collection("hub_system") \
-                .document("user_mapping") \
-                .collection("users") \
-                .document(user_id).get()
+            print("USER =", user_id)
+
+            # =====================================================
+            # GET USER MAPPING
+            # =====================================================
+
+            mapping = hub_db.collection(
+                "hub_system"
+            ).document(
+                "user_mapping"
+            ).collection(
+                "users"
+            ).document(
+                user_id
+            ).get()
+
+            # =====================================================
+            # CREATE NEW MAPPING
+            # =====================================================
 
             if not mapping.exists:
 
+                print("NEW USER")
+
                 worker = get_best_worker()
+
                 if not worker:
-                    return jsonify({"error": "no worker"})
 
-                url = f"https://liff.line.me/{LIFF_ID}?worker={worker['server_id']}"
+                    reply(
+                        token,
+                        "ไม่มี worker online"
+                    )
 
-                reply(token, "กรุณาลงทะเบียน\n" + url)
+                    continue
+
+                # SAVE TEMP MAPPING
+                hub_db.collection(
+                    "hub_system"
+                ).document(
+                    "user_mapping"
+                ).collection(
+                    "users"
+                ).document(
+                    user_id
+                ).set({
+
+                    "user_id":
+                        user_id,
+
+                    "worker_id":
+                        worker["server_id"],
+
+                    "cloud_url":
+                        worker["cloud_url"],
+
+                    "register":
+                        False,
+
+                    "created_at":
+                        datetime.utcnow()
+                })
+
+                worker_url = worker[
+                    "cloud_url"
+                ]
+
+                worker_id = worker[
+                    "server_id"
+                ]
+
+            else:
+
+                print("EXIST USER")
+
+                data = mapping.to_dict()
+
+                worker_url = data.get(
+                    "cloud_url"
+                )
+
+                worker_id = data.get(
+                    "worker_id"
+                )
+
+            print("WORKER =", worker_id)
+            print("URL =", worker_url)
+
+            # =====================================================
+            # CHECK WORKER ONLINE
+            # =====================================================
+
+            worker_doc = hub_db.collection(
+                "hub_system"
+            ).document(
+                "server_pool"
+            ).collection(
+                "servers"
+            ).document(
+                worker_id
+            ).get()
+
+            worker_ok = False
+
+            if worker_doc.exists:
+
+                worker_data = worker_doc.to_dict()
+
+                worker_ok = is_worker_online(
+                    worker_data
+                )
+
+            # =====================================================
+            # FAILOVER
+            # =====================================================
+
+            if not worker_ok:
+
+                print("WORKER DEAD")
+
+                new_worker = get_best_worker()
+
+                if not new_worker:
+
+                    reply(
+                        token,
+                        "ไม่มี worker online"
+                    )
+
+                    continue
+
+                # UPDATE MAPPING
+                hub_db.collection(
+                    "hub_system"
+                ).document(
+                    "user_mapping"
+                ).collection(
+                    "users"
+                ).document(
+                    user_id
+                ).update({
+
+                    "worker_id":
+                        new_worker["server_id"],
+
+                    "cloud_url":
+                        new_worker["cloud_url"]
+                })
+
+                worker_url = new_worker[
+                    "cloud_url"
+                ]
+
+                worker_id = new_worker[
+                    "server_id"
+                ]
+
+                print("NEW WORKER =", worker_id)
+
+            # =====================================================
+            # CHECK REGISTER
+            # =====================================================
+
+            registered = False
+
+            try:
+
+                r = requests.post(
+
+                    worker_url + "/check-register",
+
+                    json={
+                        "user_id": user_id
+                    },
+
+                    timeout=10
+                )
+
+                print(
+                    "CHECK REGISTER STATUS =",
+                    r.status_code
+                )
+
+                result = r.json()
+
+                registered = result.get(
+                    "registered",
+                    False
+                )
+
+            except Exception as ex:
+
+                print("CHECK REGISTER ERROR")
+
+                traceback.print_exc()
+
+                registered = False
+
+            print("REGISTERED =", registered)
+
+            # =====================================================
+            # NOT REGISTER
+            # =====================================================
+
+            if not registered:
+
+                register_url = (
+
+                    f"https://liff.line.me/"
+                    f"{LIFF_ID}"
+                    f"?worker={worker_id}"
+                )
+
+                print(
+                    "REGISTER URL =",
+                    register_url
+                )
+
+                reply(
+
+                    token,
+
+                    "กรุณาลงทะเบียน\n\n"
+                    + register_url
+                )
+
                 continue
 
-            data = mapping.to_dict()
+            # =====================================================
+            # FORWARD EVENT TO WORKER
+            # =====================================================
 
-            worker_url = data.get("cloud_url")
+            try:
 
-            requests.post(
-                worker_url + "/main-route",
-                json={"events": [e]}
-            )
+                r = requests.post(
 
-        return jsonify({"status": "ok"})
+                    worker_url + "/main-route",
+
+                    json={
+                        "events": [e]
+                    },
+
+                    timeout=30
+                )
+
+                print(
+                    "FORWARD STATUS =",
+                    r.status_code
+                )
+
+                print(
+                    "FORWARD RESPONSE =",
+                    r.text
+                )
+
+            except Exception as ex:
+
+                print("FORWARD ERROR")
+
+                traceback.print_exc()
+
+                reply(
+
+                    token,
+
+                    "worker offline กรุณาลองใหม่"
+                )
+
+        return jsonify({
+            "status": "ok"
+        })
 
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)})
 
+        traceback.print_exc()
+
+        return jsonify({
+
+            "status":
+                "error",
+
+            "message":
+                str(e)
+
+        }), 500
 # =========================================================
 # REGISTER USER
 # =========================================================
