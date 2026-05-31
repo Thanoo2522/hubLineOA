@@ -1,40 +1,82 @@
 from flask import Flask, request, jsonify, render_template
+
 import os
 import json
 import traceback
 import requests
 import time
+
 from datetime import datetime
 
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+# =========================================================
+# FLASK
+# =========================================================
 app = Flask(__name__)
 
 # =========================================================
 # ENV
 # =========================================================
-HUB_FIREBASE_KEY = os.environ.get("HUB_FIREBASE_KEY")
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-LIFF_ID = os.environ.get("LIFF_ID")
+HUB_FIREBASE_KEY = os.environ.get(
+    "HUB_FIREBASE_KEY"
+)
 
-if not HUB_FIREBASE_KEY or not LINE_CHANNEL_ACCESS_TOKEN or not LIFF_ID:
-    raise RuntimeError("Missing ENV")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
+    "LINE_CHANNEL_ACCESS_TOKEN"
+)
+
+LIFF_ID = os.environ.get(
+    "LIFF_ID"
+)
+
+# =========================================================
+# VALIDATE ENV
+# =========================================================
+if not HUB_FIREBASE_KEY:
+    raise RuntimeError(
+        "Missing HUB_FIREBASE_KEY"
+    )
+
+if not LINE_CHANNEL_ACCESS_TOKEN:
+    raise RuntimeError(
+        "Missing LINE_CHANNEL_ACCESS_TOKEN"
+    )
+
+if not LIFF_ID:
+    raise RuntimeError(
+        "Missing LIFF_ID"
+    )
 
 # =========================================================
 # FIREBASE
 # =========================================================
-hub_cred = credentials.Certificate(json.loads(HUB_FIREBASE_KEY))
-hub_app = firebase_admin.initialize_app(hub_cred, name="hub")
+hub_cred = credentials.Certificate(
+    json.loads(HUB_FIREBASE_KEY)
+)
+
+hub_app = firebase_admin.initialize_app(
+    hub_cred,
+    name="hub"
+)
+
 hub_db = firestore.client(hub_app)
 
 # =========================================================
-# LINE
+# LINE API
 # =========================================================
-LINE_REPLY_API = "https://api.line.me/v2/bot/message/reply"
+LINE_REPLY_API = (
+    "https://api.line.me/v2/bot/message/reply"
+)
+
 LINE_HEADERS = {
-    "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-    "Content-Type": "application/json"
+
+    "Authorization":
+        f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+
+    "Content-Type":
+        "application/json"
 }
 
 # =========================================================
@@ -42,22 +84,39 @@ LINE_HEADERS = {
 # =========================================================
 @app.route("/")
 def home():
+
     return "HUB RUNNING"
 
 # =========================================================
-# WORKER ONLINE CHECK
+# CHECK WORKER ONLINE
 # =========================================================
 def is_worker_online(data):
+
     try:
+
         if data.get("status") != "online":
             return False
 
-        last = data.get("last_heartbeat")
-        if not last:
+        last_heartbeat = data.get(
+            "last_heartbeat"
+        )
+
+        if not last_heartbeat:
             return False
 
-        return (int(time.time()) - int(last)) <= 300
-    except:
+        now = int(time.time())
+
+        diff = now - int(last_heartbeat)
+
+        if diff > 300:
+            return False
+
+        return True
+
+    except Exception:
+
+        traceback.print_exc()
+
         return False
 
 # =========================================================
@@ -65,74 +124,124 @@ def is_worker_online(data):
 # =========================================================
 def get_best_worker():
 
-    docs = hub_db.collection("hub_system").document("server_pool").collection("servers").stream()
+    docs = (
 
-    best = None
-    lowest = 999999
+        hub_db.collection("hub_system")
+        .document("server_pool")
+        .collection("servers")
+        .stream()
+    )
 
-    for d in docs:
-        data = d.to_dict()
+    selected = None
+
+    lowest_load = 999999
+
+    for doc in docs:
+
+        data = doc.to_dict()
 
         if not is_worker_online(data):
             continue
 
-        load = float(data.get("load_score", 999999))
+        cloud_url = data.get("cloud_url")
 
-        if load < lowest:
-            lowest = load
-            best = {
-                "server_id": d.id,
-                "cloud_url": data.get("cloud_url")
+        if not cloud_url:
+            continue
+
+        load_score = float(
+            data.get(
+                "load_score",
+                999999
+            )
+        )
+
+        if load_score < lowest_load:
+
+            lowest_load = load_score
+
+            selected = {
+
+                "server_id": doc.id,
+
+                "cloud_url": cloud_url
             }
 
-    return best
+    print("SELECTED =", selected)
+
+    return selected
 
 # =========================================================
-# REPLY
+# REPLY REGISTER MESSAGE
 # =========================================================
-def reply(token, text):
-    requests.post(
+def reply_register_message(
+    reply_token,
+    register_url
+):
+
+    payload = {
+
+        "replyToken": reply_token,
+
+        "messages": [
+            {
+                "type": "text",
+
+                "text":
+                    "กรุณาลงทะเบียนก่อนใช้งาน\n\n"
+                    + register_url
+            }
+        ]
+    }
+
+    r = requests.post(
+
         LINE_REPLY_API,
+
         headers=LINE_HEADERS,
-        json={
-            "replyToken": token,
-            "messages": [{"type": "text", "text": text}]
-        }
+
+        json=payload
     )
+
+    print("LINE STATUS:", r.status_code)
+
+    print(r.text)
 
 # =========================================================
 # WEBHOOK
+# =========================================================
+
+# =========================================================
+# WEBHOOK
+# HUB -> FORWARD TO WORKER MAIN ROUTE
 # =========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
     try:
 
-        body = request.get_json(
-            silent=True
-        ) or {}
+        body = request.get_json()
 
         print("=" * 50)
-        print("HUB WEBHOOK")
+
+        print("WEBHOOK")
+
         print(json.dumps(
             body,
             indent=2,
             ensure_ascii=False
         ))
+
         print("=" * 50)
 
-        events = body.get(
-            "events",
-            []
-        )
+        events = body.get("events", [])
 
-        for e in events:
+        for event in events:
 
-            token = e.get(
+            reply_token = event.get(
                 "replyToken"
             )
 
-            source = e.get(
+            source = event.get(
                 "source",
                 {}
             )
@@ -144,216 +253,41 @@ def webhook():
             if not user_id:
                 continue
 
-            print("USER =", user_id)
+            # ====================================
+            # CHECK USER MAPPING
+            # ====================================
 
-            # =====================================================
-            # GET USER MAPPING
-            # =====================================================
+            mapping_doc = (
 
-            mapping = hub_db.collection(
-                "hub_system"
-            ).document(
-                "user_mapping"
-            ).collection(
-                "users"
-            ).document(
-                user_id
-            ).get()
+                hub_db.collection("hub_system")
+                .document("user_mapping")
+                .collection("users")
+                .document(user_id)
+                .get()
+            )
 
-            # =====================================================
-            # CREATE NEW MAPPING
-            # =====================================================
+            # ====================================
+            # NOT REGISTER
+            # ====================================
 
-            if not mapping.exists:
-
-                print("NEW USER")
+            if not mapping_doc.exists:
 
                 worker = get_best_worker()
 
                 if not worker:
 
-                    reply(
-                        token,
-                        "ไม่มี worker online"
-                    )
+                    return jsonify({
 
-                    continue
+                        "status": "error",
 
-                # SAVE TEMP MAPPING
-                hub_db.collection(
-                    "hub_system"
-                ).document(
-                    "user_mapping"
-                ).collection(
-                    "users"
-                ).document(
-                    user_id
-                ).set({
-
-                    "user_id":
-                        user_id,
-
-                    "worker_id":
-                        worker["server_id"],
-
-                    "cloud_url":
-                        worker["cloud_url"],
-
-                    "register":
-                        False,
-
-                    "created_at":
-                        datetime.utcnow()
-                })
-
-                worker_url = worker[
-                    "cloud_url"
-                ]
-
-                worker_id = worker[
-                    "server_id"
-                ]
-
-            else:
-
-                print("EXIST USER")
-
-                data = mapping.to_dict()
-
-                worker_url = data.get(
-                    "cloud_url"
-                )
-
-                worker_id = data.get(
-                    "worker_id"
-                )
-
-            print("WORKER =", worker_id)
-            print("URL =", worker_url)
-
-            # =====================================================
-            # CHECK WORKER ONLINE
-            # =====================================================
-
-            worker_doc = hub_db.collection(
-                "hub_system"
-            ).document(
-                "server_pool"
-            ).collection(
-                "servers"
-            ).document(
-                worker_id
-            ).get()
-
-            worker_ok = False
-
-            if worker_doc.exists:
-
-                worker_data = worker_doc.to_dict()
-
-                worker_ok = is_worker_online(
-                    worker_data
-                )
-
-            # =====================================================
-            # FAILOVER
-            # =====================================================
-
-            if not worker_ok:
-
-                print("WORKER DEAD")
-
-                new_worker = get_best_worker()
-
-                if not new_worker:
-
-                    reply(
-                        token,
-                        "ไม่มี worker online"
-                    )
-
-                    continue
-
-                # UPDATE MAPPING
-                hub_db.collection(
-                    "hub_system"
-                ).document(
-                    "user_mapping"
-                ).collection(
-                    "users"
-                ).document(
-                    user_id
-                ).update({
-
-                    "worker_id":
-                        new_worker["server_id"],
-
-                    "cloud_url":
-                        new_worker["cloud_url"]
-                })
-
-                worker_url = new_worker[
-                    "cloud_url"
-                ]
-
-                worker_id = new_worker[
-                    "server_id"
-                ]
-
-                print("NEW WORKER =", worker_id)
-
-            # =====================================================
-            # CHECK REGISTER
-            # =====================================================
-
-            registered = False
-
-            try:
-
-                r = requests.post(
-
-                    worker_url + "/check-register",
-
-                    json={
-                        "user_id": user_id
-                    },
-
-                    timeout=10
-                )
-
-                print(
-                    "CHECK REGISTER STATUS =",
-                    r.status_code
-                )
-
-                result = r.json()
-
-                registered = result.get(
-                    "registered",
-                    False
-                )
-
-            except Exception as ex:
-
-                print("CHECK REGISTER ERROR")
-
-                traceback.print_exc()
-
-                registered = False
-
-            print("REGISTERED =", registered)
-
-            # =====================================================
-            # NOT REGISTER
-            # =====================================================
-
-            if not registered:
+                        "message": "no worker"
+                    })
 
                 register_url = (
 
-                    f"https://liff.line.me/"
-                    f"{LIFF_ID}"
-                    f"?worker={worker_id}"
+                    f"https://liff.line.me/{LIFF_ID}"
+
+                    f"?worker={worker['server_id']}"
                 )
 
                 print(
@@ -361,58 +295,67 @@ def webhook():
                     register_url
                 )
 
-                reply(
-
-                    token,
-
-                    "กรุณาลงทะเบียน\n\n"
-                    + register_url
+                reply_register_message(
+                    reply_token,
+                    register_url
                 )
 
                 continue
 
-            # =====================================================
-            # FORWARD EVENT TO WORKER
-            # =====================================================
+            # ====================================
+            # GET USER MAPPING
+            # ====================================
 
-            try:
+            mapping_data = mapping_doc.to_dict()
 
-                r = requests.post(
+            worker_url = mapping_data.get(
+                "cloud_url"
+            )
 
-                    worker_url + "/main-route",
+            worker_id = mapping_data.get(
+                "worker_id"
+            )
 
-                    json={
-                        "events": [e]
-                    },
+            if not worker_url:
 
-                    timeout=30
-                )
+                print("NO worker_url")
 
-                print(
-                    "FORWARD STATUS =",
-                    r.status_code
-                )
+                continue
 
-                print(
-                    "FORWARD RESPONSE =",
-                    r.text
-                )
+            print(
+                "FORWARD TO:",
+                worker_id
+            )
 
-            except Exception as ex:
+            print(
+                "URL:",
+                worker_url
+            )
 
-                print("FORWARD ERROR")
+            # ====================================
+            # FORWARD TO WORKER MAIN ROUTE
+            # ====================================
 
-                traceback.print_exc()
+            rr = requests.post(
 
-                reply(
+                worker_url + "/main-route",
 
-                    token,
+                json={
+                    "events": [event]
+                },
 
-                    "worker offline กรุณาลองใหม่"
-                )
+                timeout=10
+            )
+
+            print(
+                "WORKER STATUS =",
+                rr.status_code
+            )
+
+            print(rr.text)
 
         return jsonify({
-            "status": "ok"
+            "status": "success"
         })
 
     except Exception as e:
@@ -421,41 +364,208 @@ def webhook():
 
         return jsonify({
 
-            "status":
-                "error",
+            "status": "error",
 
-            "message":
-                str(e)
+            "message": str(e)
 
         }), 500
+
+
+
 # =========================================================
 # REGISTER USER
 # =========================================================
 @app.route("/register-user", methods=["POST"])
 def register_user():
 
-    body = request.get_json()
+    try:
 
-    worker = get_best_worker()
+        body = request.get_json(
+            silent=True
+        ) or {}
 
-    hub_db.collection("hub_system") \
-        .document("user_mapping") \
-        .collection("users") \
-        .document(body["user_id"]) \
-        .set({
-            "user_id": body["user_id"],
-            "worker_id": worker["server_id"],
-            "cloud_url": worker["cloud_url"],
-            "register": True,
-            "created_at": datetime.utcnow()
+        print("=" * 50)
+        print("REGISTER BODY")
+        print(body)
+        print("=" * 50)
+
+        user_id = body.get("user_id")
+
+        if not user_id:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "no user_id"
+
+            }), 400
+
+        # ====================================
+        # GET BEST WORKER
+        # ====================================
+
+        worker = get_best_worker()
+
+        print("WORKER =", worker)
+
+        if not worker:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "no worker"
+
+            }), 500
+
+        worker_id = worker.get("server_id")
+
+        cloud_url = worker.get("cloud_url")
+
+        print("WORKER ID =", worker_id)
+        print("CLOUD URL =", cloud_url)
+
+        if not worker_id:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "worker_id missing"
+
+            }), 500
+
+        if not cloud_url:
+
+            return jsonify({
+
+                "status": "error",
+
+                "message": "cloud_url missing"
+
+            }), 500
+
+        # ====================================
+        # SAVE USER MAPPING
+        # ====================================
+
+        mapping_data = {
+
+            "user_id":
+                user_id,
+
+            "fullname":
+                body.get("name", ""),
+
+            "phone":
+                body.get("phone", ""),
+
+            "email":
+                body.get("email", ""),
+
+            "worker_id":
+                worker_id,
+
+            "cloud_url":
+                cloud_url,
+
+            "register":
+                True,
+
+            "created_at":
+                datetime.utcnow()
+        }
+
+        print("SAVE MAPPING =", mapping_data)
+
+        hub_db.collection("hub_system") \
+            .document("user_mapping") \
+            .collection("users") \
+            .document(user_id) \
+            .set(mapping_data)
+
+        print("✅ MAPPING SAVED")
+
+        # ====================================
+        # FORWARD REGISTER TO WORKER
+        # ====================================
+
+        register_url = (
+            cloud_url +
+            "/register-user"
+        )
+
+        print("REGISTER URL =", register_url)
+
+        rr = requests.post(
+
+            register_url,
+
+            json=body,
+
+            timeout=10
+        )
+
+        print(
+            "WORKER REGISTER STATUS =",
+            rr.status_code
+        )
+
+        print(
+            "WORKER REGISTER TEXT =",
+            rr.text
+        )
+
+        # ====================================
+        # SUCCESS
+        # ====================================
+
+        return jsonify({
+
+            "status": "success",
+
+            "message": "ลงทะเบียนสำเร็จ"
         })
 
-    requests.post(worker["cloud_url"] + "/register-user", json=body)
+    except Exception as e:
 
-    return jsonify({"status": "ok"})
+        traceback.print_exc()
+
+        return jsonify({
+
+            "status": "error",
+
+            "message": str(e)
+
+        }), 500
+
+# =========================================================
+# REGISTER PAGE
+# =========================================================
+@app.route("/register-page")
+def register_page():
+
+    return render_template(
+
+        "register.html",
+
+        liff_id=LIFF_ID
+    )
 
 # =========================================================
 # RUN
 # =========================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+    app.run(
+
+        host="0.0.0.0",
+
+        port=int(
+            os.environ.get(
+                "PORT",
+                8080
+            )
+        )
+    )
