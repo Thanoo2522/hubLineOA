@@ -207,9 +207,44 @@ def reply_register_message(
     print(r.text)
 
 # =========================================================
-# WEBHOOK
-# =========================================================
+@app.route("/app-check-register", methods=["POST"])
+def app_check_register():
 
+    try:
+
+        body = request.get_json(silent=True) or {}
+
+        device_id = body.get("device_id")
+
+        if not device_id:
+
+            return jsonify({
+                "registered": False
+            })
+
+        docs = hub_db.collection("hub_system") \
+            .document("device_mapping") \
+            .collection("devices") \
+            .where("device_id", "==", device_id) \
+            .limit(1) \
+            .stream()
+
+        for doc in docs:
+
+            return jsonify({
+                "registered": True
+            })
+
+        return jsonify({
+            "registered": False
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "registered": False,
+            "message": str(e)
+        })
 # =========================================================
 # WEBHOOK
 # HUB -> FORWARD TO WORKER MAIN ROUTE
