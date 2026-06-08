@@ -282,9 +282,6 @@ def app_check_register():
 
             "registered": False,
 
-            "worker_id":
-                worker.get("worker_id"),
-
             "server_id":
                 worker.get("server_id"),
 
