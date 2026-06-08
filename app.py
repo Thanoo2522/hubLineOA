@@ -212,39 +212,98 @@ def app_check_register():
 
     try:
 
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(
+            silent=True
+        ) or {}
 
-        device_id = body.get("device_id")
+        device_id = body.get(
+            "device_id"
+        )
 
         if not device_id:
 
+            worker = get_best_worker()
+
             return jsonify({
-                "registered": False
+
+                "registered": False,
+
+                "worker_id":
+                    worker.get("worker_id")
+                    if worker else None,
+
+                "server_id":
+                    worker.get("server_id")
+                    if worker else None,
+
+                "cloud_url":
+                    worker.get("cloud_url")
+                    if worker else None
             })
 
-        docs = hub_db.collection("hub_system") \
-            .document("device_mapping") \
-            .collection("devices") \
-            .where("device_id", "==", device_id) \
-            .limit(1) \
+        docs = (
+
+            hub_db.collection("hub_system")
+            .document("device_mapping")
+            .collection("devices")
+            .where(
+                "device_id",
+                "==",
+                device_id
+            )
+            .limit(1)
             .stream()
+        )
 
         for doc in docs:
 
             return jsonify({
+
                 "registered": True
             })
 
+        # ---------------------
+        # NOT REGISTERED
+        # ---------------------
+
+        worker = get_best_worker()
+
+        if not worker:
+
+            return jsonify({
+
+                "registered": False,
+
+                "message":
+                    "no worker available"
+            })
+
         return jsonify({
-            "registered": False
+
+            "registered": False,
+
+            "worker_id":
+                worker.get("worker_id"),
+
+            "server_id":
+                worker.get("server_id"),
+
+            "cloud_url":
+                worker.get("cloud_url")
         })
 
     except Exception as e:
 
+        traceback.print_exc()
+
         return jsonify({
+
             "registered": False,
-            "message": str(e)
-        })
+
+            "message":
+                str(e)
+
+        }), 500
 # =========================================================
 # WEBHOOK
 # HUB -> FORWARD TO WORKER MAIN ROUTE
