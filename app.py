@@ -206,7 +206,7 @@ def reply_register_message(
 
     print(r.text)
 
-# =========================================================
+# ===================================================
 @app.route("/app-check-register", methods=["POST"])
 def app_check_register():
 
