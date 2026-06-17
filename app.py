@@ -166,7 +166,7 @@ def get_best_worker():
                 "cloud_url": cloud_url
             }
 
-    print("SELECTED =", selected)
+    
 
     return selected
 
@@ -201,10 +201,7 @@ def reply_register_message(
 
         json=payload
     )
-
-    print("LINE STATUS:", r.status_code)
-
-    print(r.text)
+ 
 
 # =============================================== 
 @app.route("/app-check-register", methods=["POST"])
@@ -311,18 +308,7 @@ def webhook():
     try:
 
         body = request.get_json()
-
-        print("=" * 50)
-
-        print("WEBHOOK")
-
-        print(json.dumps(
-            body,
-            indent=2,
-            ensure_ascii=False
-        ))
-
-        print("=" * 50)
+ 
 
         events = body.get("events", [])
 
@@ -381,10 +367,7 @@ def webhook():
                     f"?worker={worker['server_id']}"
                 )
 
-                print(
-                    "REGISTER URL =",
-                    register_url
-                )
+                
 
                 reply_register_message(
                     reply_token,
@@ -407,22 +390,7 @@ def webhook():
                 "worker_id"
             )
 
-            if not worker_url:
-
-                print("NO worker_url")
-
-                continue
-
-            print(
-                "FORWARD TO:",
-                worker_id
-            )
-
-            print(
-                "URL:",
-                worker_url
-            )
-
+ 
             # ====================================
             # FORWARD TO WORKER MAIN ROUTE
             # ====================================
@@ -438,12 +406,7 @@ def webhook():
                 timeout=10
             )
 
-            print(
-                "WORKER STATUS =",
-                rr.status_code
-            )
-
-            print(rr.text)
+ 
 
         return jsonify({
             "status": "success"
@@ -474,11 +437,7 @@ def register_user():
         body = request.get_json(
             silent=True
         ) or {}
-
-        print("=" * 50)
-        print("REGISTER BODY")
-        print(body)
-        print("=" * 50)
+ 
 
         user_id = body.get("user_id")
 
@@ -498,7 +457,7 @@ def register_user():
 
         worker = get_best_worker()
 
-        print("WORKER =", worker)
+       
 
         if not worker:
 
@@ -513,9 +472,7 @@ def register_user():
         worker_id = worker.get("server_id")
 
         cloud_url = worker.get("cloud_url")
-
-        print("WORKER ID =", worker_id)
-        print("CLOUD URL =", cloud_url)
+ 
 
         if not worker_id:
 
@@ -568,7 +525,7 @@ def register_user():
                 datetime.utcnow()
         }
 
-        print("SAVE MAPPING =", mapping_data)
+        
 
         hub_db.collection("hub_system") \
             .document("user_mapping") \
@@ -576,7 +533,7 @@ def register_user():
             .document(user_id) \
             .set(mapping_data)
 
-        print("✅ MAPPING SAVED")
+         
 
         # ====================================
         # FORWARD REGISTER TO WORKER
@@ -587,7 +544,7 @@ def register_user():
             "/register-user"
         )
 
-        print("REGISTER URL =", register_url)
+        
 
         rr = requests.post(
 
@@ -598,15 +555,7 @@ def register_user():
             timeout=10
         )
 
-        print(
-            "WORKER REGISTER STATUS =",
-            rr.status_code
-        )
-
-        print(
-            "WORKER REGISTER TEXT =",
-            rr.text
-        )
+  
 
         # ====================================
         # SUCCESS
