@@ -133,7 +133,6 @@ def is_worker_online(data):
 def get_best_worker():
 
     docs = (
-
         hub_db.collection("hub_system")
         .document("server_pool")
         .collection("servers")
@@ -141,7 +140,6 @@ def get_best_worker():
     )
 
     selected = None
-
     lowest_load = 999999
 
     for doc in docs:
@@ -169,15 +167,14 @@ def get_best_worker():
 
             selected = {
 
-                "server_id": doc.id,
+                "server_id":    data.get(         "server_id",         doc.id   ),
 
-                "cloud_url": cloud_url
+                "cloud_url": cloud_url,
+
+                "load_score": load_score
             }
 
-    
-
     return selected
-
 # =========================================================
 # REPLY REGISTER MESSAGE
 # =========================================================
@@ -217,60 +214,6 @@ def app_check_register():
 
     try:
 
-        body = request.get_json(
-            silent=True
-        ) or {}
-
-        device_id = body.get(
-            "device_id"
-        )
-
-        if not device_id:
-
-            worker = get_best_worker()
-
-            return jsonify({
-
-                "registered": False,
-
-                "worker_id":
-                    worker.get("worker_id")
-                    if worker else None,
-
-                "server_id":
-                    worker.get("server_id")
-                    if worker else None,
-
-                "cloud_url":
-                    worker.get("cloud_url")
-                    if worker else None
-            })
-
-        docs = (
-
-            hub_db.collection("hub_system")
-            .document("device_mapping")
-            .collection("devices")
-            .where(
-                "device_id",
-                "==",
-                device_id
-            )
-            .limit(1)
-            .stream()
-        )
-
-        for doc in docs:
-
-            return jsonify({
-
-                "registered": True
-            })
-
-        # ---------------------
-        # NOT REGISTERED
-        # ---------------------
-
         worker = get_best_worker()
 
         if not worker:
@@ -288,22 +231,24 @@ def app_check_register():
             "registered": False,
 
             "server_id":
-                worker.get("server_id"),
+                worker["server_id"],
 
             "cloud_url":
-                worker.get("cloud_url")
+                worker["cloud_url"],
+
+            "load_score":
+                worker["load_score"]
         })
 
     except Exception as e:
- 
+
         traceback.print_exc()
 
         return jsonify({
 
             "registered": False,
 
-            "message":
-                str(e)
+            "message": str(e)
 
         }), 500
 # =========================================================
